@@ -32,6 +32,8 @@ public:
 	int32 SourceChannels = 1;
 	int32 OutputChannel = 0;  // 0 = all channels
 	FString DeviceId;
+	bool bExclusive = false;
+	int32 BufferSizeMs = 0;  // 0 = driver default (exclusive) or 1s (shared)
 	std::thread PlaybackThread;
 
 	void RunPlayback()
@@ -115,8 +117,35 @@ public:
 			return;
 		}
 
-		REFERENCE_TIME hnsRequested = REFTIMES_PER_SEC;
-		hr = pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, hnsRequested, 0, pwfx, nullptr);
+		// Exclusive mode: use AUDCLNT_SHAREMODE_EXCLUSIVE, fall back to shared if unsupported
+		AUDCLNT_SHAREMODE ShareMode = bExclusive ? AUDCLNT_SHAREMODE_EXCLUSIVE : AUDCLNT_SHAREMODE_SHARED;
+		REFERENCE_TIME hnsRequested = bExclusive ? (BufferSizeMs > 0 ? (REFERENCE_TIME)BufferSizeMs * REFTIMES_PER_MILLISEC : 0) : REFTIMES_PER_SEC;
+		REFERENCE_TIME hnsPeriodicity = bExclusive ? hnsRequested : 0;
+		DWORD StreamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+		hr = pAudioClient->Initialize(ShareMode, StreamFlags, hnsRequested, hnsPeriodicity, pwfx, nullptr);
+		if (FAILED(hr) && bExclusive)
+		{
+			ShareMode = AUDCLNT_SHAREMODE_SHARED;
+			hnsRequested = REFTIMES_PER_SEC;
+			hnsPeriodicity = 0;
+			hr = pAudioClient->Initialize(ShareMode, StreamFlags, hnsRequested, hnsPeriodicity, pwfx, nullptr);
+		}
+		// Fallback to polling if event-driven not supported
+		bool bUseEvent = SUCCEEDED(hr);
+		if (!bUseEvent)
+		{
+			StreamFlags = 0;
+			hnsPeriodicity = 0;
+			hnsRequested = bExclusive ? (BufferSizeMs > 0 ? (REFERENCE_TIME)BufferSizeMs * REFTIMES_PER_MILLISEC : 0) : REFTIMES_PER_SEC;
+			ShareMode = bExclusive ? AUDCLNT_SHAREMODE_EXCLUSIVE : AUDCLNT_SHAREMODE_SHARED;
+			hr = pAudioClient->Initialize(ShareMode, StreamFlags, hnsRequested, 0, pwfx, nullptr);
+			if (FAILED(hr) && bExclusive)
+			{
+				ShareMode = AUDCLNT_SHAREMODE_SHARED;
+				hnsRequested = REFTIMES_PER_SEC;
+				hr = pAudioClient->Initialize(ShareMode, StreamFlags, hnsRequested, 0, pwfx, nullptr);
+			}
+		}
 		if (FAILED(hr))
 		{
 			CoTaskMemFree(pwfx);
@@ -124,6 +153,26 @@ public:
 			CoUninitialize();
 			bPlaying = false;
 			return;
+		}
+
+		HANDLE hEvent = nullptr;
+		if (bUseEvent)
+		{
+			hEvent = CreateEvent(nullptr, 0, 0, nullptr);  // auto-reset, initially non-signaled
+			if (hEvent)
+			{
+				hr = pAudioClient->SetEventHandle(hEvent);
+				if (FAILED(hr))
+				{
+					CloseHandle(hEvent);
+					hEvent = nullptr;
+					bUseEvent = false;
+				}
+			}
+			else
+			{
+				bUseEvent = false;
+			}
 		}
 
 		UINT32 BufferFrameCount = 0;
@@ -225,7 +274,18 @@ public:
 
 		while (!bStopRequested)
 		{
-			Sleep((DWORD)(hnsActualDuration / REFTIMES_PER_MILLISEC / 2));
+			if (bUseEvent && hEvent)
+			{
+				DWORD WaitResult = WaitForSingleObject(hEvent, 100);
+				if (WaitResult != WAIT_OBJECT_0 && WaitResult != WAIT_TIMEOUT)
+				{
+					break;
+				}
+			}
+			else
+			{
+				Sleep((DWORD)(hnsActualDuration / REFTIMES_PER_MILLISEC / 2));
+			}
 
 			UINT32 numFramesPadding = 0;
 			pAudioClient->GetCurrentPadding(&numFramesPadding);
@@ -263,9 +323,12 @@ public:
 			}
 		}
 
-		Sleep((DWORD)(hnsActualDuration / REFTIMES_PER_MILLISEC / 2));
+		if (bUseEvent && hEvent)
+		{
+			WaitForSingleObject(hEvent, 100);
+			CloseHandle(hEvent);
+		}
 		pAudioClient->Stop();
-
 		CoTaskMemFree(pwfx);
 		pRenderClient->Release();
 		pAudioClient->Release();
@@ -470,7 +533,7 @@ FWasapiAudioBackend::~FWasapiAudioBackend()
 	Stop();
 }
 
-void FWasapiAudioBackend::Start(const FString& InDeviceId, const TArray<float>& PCMData, int32 SourceChannels, int32 OutChannel, bool bInLoop)
+void FWasapiAudioBackend::Start(const FString& InDeviceId, const TArray<float>& PCMData, int32 SourceChannels, int32 OutChannel, bool bInLoop, bool bExclusive, int32 InBufferSizeMs)
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	if (!Impl) return;
@@ -478,6 +541,8 @@ void FWasapiAudioBackend::Start(const FString& InDeviceId, const TArray<float>& 
 	Impl->bStopRequested = false;
 	Impl->bPlaying = true;
 	Impl->bLoop = bInLoop;
+	Impl->bExclusive = bExclusive;
+	Impl->BufferSizeMs = FMath::Max(0, InBufferSizeMs);
 	Impl->PCMCopy = PCMData;
 	Impl->SourceChannels = FMath::Max(1, SourceChannels);
 	Impl->OutputChannel = OutChannel;

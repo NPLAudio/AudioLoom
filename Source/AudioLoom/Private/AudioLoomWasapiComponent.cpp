@@ -29,7 +29,9 @@ void UAudioLoomWasapiComponent::PostEditChangeProperty(FPropertyChangedEvent& Pr
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	const FName PropName = PropertyChangedEvent.GetMemberPropertyName();
 	if ((PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OutputChannel) ||
-	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, DeviceId)) &&
+	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, DeviceId) ||
+	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, bUseExclusiveMode) ||
+	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, BufferSizeMs)) &&
 	    IsPlaying() && SoundWave)
 	{
 		Stop();
@@ -83,7 +85,7 @@ void UAudioLoomWasapiComponent::Play()
 		PCM = MoveTemp(Resampled);
 	}
 
-	Backend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop);
+	Backend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop, bUseExclusiveMode, BufferSizeMs);
 
 	if (UWorld* W = GetWorld())
 	{

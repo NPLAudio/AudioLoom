@@ -61,6 +61,7 @@ AudioLoom requires the **OSC** plugin (included with Unreal Engine). If it is di
 
 - **Device routing** — Send audio to any system output device (speakers, interfaces, virtual devices)
 - **Per-channel routing** — Route to specific output channels (e.g. channel 3 only)
+- **Low latency mode** — Bypass system mixer for lower latency (Windows)
 - **OSC control** — Play, stop, and loop via OSC messages
 - **OSC monitoring** — Emit play/stop state to external software
 - **Manager panel** — Central UI for all components, devices, and OSC
@@ -104,6 +105,8 @@ Both share the same features.
 | **Sound Wave** | The `USoundWave` to play |
 | **Device Id** | Empty = default output; otherwise the ID of the target device |
 | **Output Channel** | 0 = all channels; 1–N = route only to that channel |
+| **Low Latency Mode** | Bypass system mixer (Windows). Falls back to shared if unsupported |
+| **Buffer Size (ms)** | Buffer duration for low latency mode. 0 = driver default. Typical 3–20 ms |
 
 ### Playback
 
@@ -130,6 +133,8 @@ Central panel for:
 - **Sound** — Assign sounds directly in the table (click, drag-drop, or “Use Selected” from the Content Browser)
 - **Device** — Dropdown of output devices
 - **Channel** — Output channel per component
+- **Low Latency** — Toggle low latency mode (Windows)
+- **Buffer (ms)** — Buffer size for low latency mode
 - **OSC Address** — Shows validity (✓/✗) and lets you edit inline
 - **Loop** / **Begin** — Toggles for each component
 - **Play** / **Stop** — Buttons per row
@@ -284,6 +289,7 @@ When a component starts or stops playing, AudioLoom sends:
 - **Port in use** — Use **Check Port** in the manager or choose another port in Project Settings.
 - **OSC not working** — Ensure the OSC server is started (green “Stop OSC” state) and addresses match.
 - **Wrong device on Mac** — AudioLoom uses CoreAudio; verify devices in macOS Audio MIDI Setup.
+- **Low latency mode fails** — Not all devices support it; the plugin falls back to shared automatically.
 
 ---
 

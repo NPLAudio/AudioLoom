@@ -38,6 +38,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Routing", meta = (ClampMin = "0", UIMin = "0"))
 	int32 OutputChannel = 0;
 
+	/**
+	 * Low-latency mode (Windows). Bypasses system mixer for lower latency.
+	 * Not all devices support it; falls back to shared if unavailable.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Routing")
+	bool bUseExclusiveMode = false;
+
+	/**
+	 * Buffer size in ms for low-latency mode. 0 = driver default.
+	 * Typical range 3-20 ms. Lower = less latency, higher dropout risk.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Routing", meta = (ClampMin = "0", ClampMax = "100", UIMin = "0", UIMax = "50"))
+	int32 BufferSizeMs = 0;
+
 	/** Auto-play when Play In Editor / game starts. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback")
 	bool bPlayOnBeginPlay = false;

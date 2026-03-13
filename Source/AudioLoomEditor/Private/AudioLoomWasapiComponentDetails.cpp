@@ -48,6 +48,8 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 
 	TSharedPtr<IPropertyHandle> DeviceIdHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, DeviceId));
 	TSharedPtr<IPropertyHandle> OutputChannelHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OutputChannel));
+	TSharedPtr<IPropertyHandle> ExclusiveHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, bUseExclusiveMode));
+	TSharedPtr<IPropertyHandle> BufferSizeMsHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, BufferSizeMs));
 	TSharedPtr<IPropertyHandle> OscAddressHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OscAddress));
 
 	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategory", "WASAPI Routing"));
@@ -209,6 +211,44 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 				.Font(IDetailLayoutBuilder::GetDetailFont())
 			]
 		];
+
+	// Low Latency Mode (Windows only) - explicit checkbox
+	RoutingCategory.AddProperty(ExclusiveHandle)
+		.CustomWidget()
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("LowLatencyLabel", "Low Latency Mode"))
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.ToolTipText(LOCTEXT("LowLatencyTip", "Bypass system mixer for lower latency. Not all devices support it. (Windows only)"))
+		]
+		.ValueContent()
+		[
+			SNew(SCheckBox)
+			.IsChecked_Lambda([ExclusiveHandle]()
+			{
+				bool bVal = false;
+				if (ExclusiveHandle.IsValid() && ExclusiveHandle->GetValue(bVal) == FPropertyAccess::Success)
+				{
+					return bVal ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+				}
+				return ECheckBoxState::Unchecked;
+			})
+			.OnCheckStateChanged_Lambda([ExclusiveHandle](ECheckBoxState NewState)
+			{
+				if (ExclusiveHandle.IsValid())
+				{
+					ExclusiveHandle->SetValue(NewState == ECheckBoxState::Checked ? true : false);
+					ExclusiveHandle->NotifyPostChange(EPropertyChangeType::ValueSet);
+				}
+			})
+			.ToolTipText(LOCTEXT("LowLatencyTip", "Bypass system mixer for lower latency. Not all devices support it. (Windows only)"))
+		];
+
+	// Buffer size (ms) - for low latency mode
+	RoutingCategory.AddProperty(BufferSizeMsHandle)
+		.DisplayName(LOCTEXT("BufferSizeLabel", "Buffer Size (ms)"))
+		.ToolTip(LOCTEXT("BufferSizeTip", "Buffer duration in ms for low latency mode. 0 = driver default. Typical 3-20 ms."));
 
 	// OSC Address with validation
 	OscCategory.AddProperty(OscAddressHandle)
