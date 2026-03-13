@@ -23,6 +23,7 @@ public class AudioLoomEditor : ModuleRules
 			"InputCore",
 			"UnrealEd",
 			"PropertyEditor",
+			"ContentBrowser",
 			"DetailCustomizations",
 			"EditorStyle",
 			"LevelEditor",

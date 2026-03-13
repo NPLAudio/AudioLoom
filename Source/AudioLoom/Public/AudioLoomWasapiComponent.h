@@ -46,14 +46,52 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback")
 	bool bLoop = false;
 
+	/**
+	 * Base OSC address for this component (e.g. /audioloom/1).
+	 * Empty = use default derived from owner and component index.
+	 * Play=/base/play, Stop=/base/stop, Loop=/base/loop. Validate override per OSC spec.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|OSC", meta = (DisplayName = "OSC Address"))
+	FString OscAddress;
+
 	UFUNCTION(BlueprintCallable, Category = "AudioLoom")
 	void Play();
 
 	UFUNCTION(BlueprintCallable, Category = "AudioLoom")
 	void Stop();
 
+	UFUNCTION(BlueprintCallable, Category = "AudioLoom", meta = (DisplayName = "Set Loop"))
+	void SetLoop(bool bInLoop);
+
 	UFUNCTION(BlueprintPure, Category = "AudioLoom")
 	bool IsPlaying() const;
+
+	UFUNCTION(BlueprintPure, Category = "AudioLoom")
+	bool GetLoop() const { return bLoop; }
+
+	/** Get effective OSC base address (resolved default if OscAddress is empty). */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AudioLoom|OSC", meta = (DisplayName = "Get OSC Address"))
+	FString GetOscAddress() const;
+
+	/** Set OSC address. Validates format. Returns true if valid and set. */
+	UFUNCTION(BlueprintCallable, Category = "AudioLoom|OSC", meta = (DisplayName = "Set OSC Address"))
+	bool SetOscAddress(const FString& InAddress);
+
+	/** Get device ID. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AudioLoom|Routing")
+	FString GetDeviceId() const { return DeviceId; }
+
+	/** Set device ID. Empty = default output. */
+	UFUNCTION(BlueprintCallable, Category = "AudioLoom|Routing")
+	void SetDeviceId(const FString& InDeviceId) { DeviceId = InDeviceId; }
+
+	/** Get output channel (0 = all). */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AudioLoom|Routing")
+	int32 GetOutputChannel() const { return OutputChannel; }
+
+	/** Set output channel (0 = all, 1-based for specific channel). */
+	UFUNCTION(BlueprintCallable, Category = "AudioLoom|Routing")
+	void SetOutputChannel(int32 Channel) { OutputChannel = FMath::Max(0, Channel); }
 
 protected:
 	virtual void BeginPlay() override;

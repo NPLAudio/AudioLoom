@@ -13,6 +13,10 @@ public class AudioLoom : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"OSC",
+			"Sockets",
+			"Networking",
+			"DeveloperSettings",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

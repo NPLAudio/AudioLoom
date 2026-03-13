@@ -2,6 +2,9 @@
 
 #include "UI/SAudioLoomPanel.h"
 #include "AudioLoomWasapiComponent.h"
+#include "AudioLoomBlueprintLibrary.h"
+#include "AudioLoomOscSubsystem.h"
+#include "AudioLoomOscSettings.h"
 #include "WasapiDeviceEnumerator.h"
 #include "WasapiDeviceInfo.h"
 
@@ -11,11 +14,17 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "EditorStyleSet.h"
+#include "PropertyCustomizationHelpers.h"
+#include "Sound/SoundWave.h"
 
 #define LOCTEXT_NAMESPACE "SAudioLoomPanel"
 
@@ -57,6 +66,157 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 				]
 			]
 
+			// OSC section
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.f, 0.f, 0.f, 8.f)
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+				.Padding(6.f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("OscSection", "OSC — Triggers & Monitoring"))
+						.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.f, 4.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 8.f, 0.f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text(LOCTEXT("ListenPort", "Listen Port")).Font(FAppStyle::GetFontStyle("SmallFont"))
+						]
+						+ SHorizontalBox::Slot()
+						.FillWidth(0.5f)
+						.MaxWidth(80.f)
+						[
+							SNew(SSpinBox<int32>)
+							.MinValue(1024).MaxValue(65535)
+							.Value_Lambda([]() { return GetDefault<UAudioLoomOscSettings>()->ListenPort; })
+							.OnValueCommitted_Lambda([](int32 Val, ETextCommit::Type)
+							{
+								if (UAudioLoomOscSettings* S = GetMutableDefault<UAudioLoomOscSettings>())
+								{
+									S->ListenPort = Val;
+									S->SaveConfig();
+								}
+							})
+							.ToolTipText(LOCTEXT("ListenPortTip", "UDP port for receiving OSC triggers"))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(12.f, 0.f, 4.f, 0.f)
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("CheckPort", "Check Port"))
+							.OnClicked(this, &SAudioLoomPanel::OnCheckPortClicked)
+							.ToolTipText(LOCTEXT("CheckPortTip", "Check if listen port is available"))
+						]
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.f)
+						.Padding(4.f, 0.f)
+						.VAlign(VAlign_Center)
+						[
+							SAssignNew(PortStatusText, STextBlock)
+							.Text(LOCTEXT("PortUnknown", "—"))
+							.Font(FAppStyle::GetFontStyle("SmallFont"))
+							.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 8.f, 0.f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text(LOCTEXT("SendTo", "Send to")).Font(FAppStyle::GetFontStyle("SmallFont"))
+						]
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.f)
+						.MaxWidth(100.f)
+						[
+							SNew(SEditableTextBox)
+							.Text_Lambda([]() { return FText::FromString(GetDefault<UAudioLoomOscSettings>()->SendIP); })
+							.OnTextCommitted_Lambda([](const FText& T, ETextCommit::Type)
+							{
+								if (UAudioLoomOscSettings* S = GetMutableDefault<UAudioLoomOscSettings>())
+								{
+									S->SendIP = T.ToString();
+									S->SaveConfig();
+								}
+							})
+							.ToolTipText(LOCTEXT("SendIPTip", "Target IP for monitoring messages"))
+							.Font(FAppStyle::GetFontStyle("SmallFont"))
+						]
+						+ SHorizontalBox::Slot()
+						.FillWidth(0.5f)
+						.MaxWidth(60.f)
+						[
+							SNew(SSpinBox<int32>)
+							.MinValue(1).MaxValue(65535)
+							.Value_Lambda([]() { return GetDefault<UAudioLoomOscSettings>()->SendPort; })
+							.OnValueCommitted_Lambda([](int32 Val, ETextCommit::Type)
+							{
+								if (UAudioLoomOscSettings* S = GetMutableDefault<UAudioLoomOscSettings>())
+								{
+									S->SendPort = Val;
+									S->SaveConfig();
+								}
+							})
+							.ToolTipText(LOCTEXT("SendPortTip", "Target port for monitoring"))
+							.Font(FAppStyle::GetFontStyle("SmallFont"))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(8.f, 0.f, 0.f, 0.f)
+						[
+							SNew(SButton)
+							.Text_Lambda([this]()
+							{
+								UWorld* W = GetCurrentWorld();
+								UAudioLoomOscSubsystem* Sub = W ? W->GetSubsystem<UAudioLoomOscSubsystem>() : nullptr;
+								return Sub && Sub->IsListening() ? LOCTEXT("StopOsc", "Stop OSC") : LOCTEXT("StartOsc", "Start OSC");
+							})
+							.OnClicked(this, &SAudioLoomPanel::OnStartStopOscClicked)
+							.ToolTipText(LOCTEXT("StartStopOscTip", "Start or stop OSC server for triggers"))
+						]
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.f, 6.f)
+					[
+						SNew(SExpandableArea)
+						.InitiallyCollapsed(true)
+						.HeaderContent()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("OscCommandsTitle", "OSC Commands Reference"))
+							.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						]
+						.BodyContent()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("OscCommandsBody",
+								"Each component has a base OSC address (e.g. /audioloom/1). Send messages to these addresses:\n\n"
+								"• /base/play  — Start playback. Args: float ≥0.5, int ≥1, or none.\n"
+								"• /base/stop  — Stop playback. Any message triggers stop.\n"
+								"• /base/loop  — Set loop on/off. 1 = loop, 0 = no loop.\n\n"
+								"Monitoring (outgoing): When play or stop occurs, AudioLoom sends to Send IP:Port:\n"
+								"• /base/state — Float 1 (playing) or 0 (stopped)."))
+							.Font(FAppStyle::GetFontStyle("SmallFont"))
+							.AutoWrapText(true)
+						]
+					]
+				]
+			]
+
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.Padding(0.f, 0.f, 0.f, 4.f)
@@ -74,6 +234,8 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 					[SNew(STextBlock).Text(LOCTEXT("ColLoop", "Loop")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
 				+ SHorizontalBox::Slot().FillWidth(0.5f).Padding(4.f, 2.f)
 					[SNew(STextBlock).Text(LOCTEXT("ColBegin", "Begin")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+				+ SHorizontalBox::Slot().FillWidth(1.2f).Padding(4.f, 2.f)
+					[SNew(STextBlock).Text(LOCTEXT("ColOscAddr", "OSC Address")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
 				+ SHorizontalBox::Slot().FillWidth(0.5f).Padding(4.f, 2.f)
 					[SNew(STextBlock).Text(LOCTEXT("ColStatus", "Status")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
 				+ SHorizontalBox::Slot().FillWidth(0.8f).Padding(4.f, 2.f)
@@ -177,12 +339,79 @@ EActiveTimerReturnType SAudioLoomPanel::OnRefreshTimer(double InCurrentTime, flo
 	{
 		RebuildComponentList();
 	}
+	UWorld* World = GetCurrentWorld();
+	if (World)
+	{
+		if (UAudioLoomOscSubsystem* Sub = World->GetSubsystem<UAudioLoomOscSubsystem>())
+		{
+			if (Sub->IsListening())
+			{
+				Sub->RebuildComponentRegistry();
+			}
+		}
+	}
 	return EActiveTimerReturnType::Continue;
 }
 
 FReply SAudioLoomPanel::OnRefreshClicked()
 {
 	RebuildComponentList();
+	return FReply::Handled();
+}
+
+FReply SAudioLoomPanel::OnCheckPortClicked()
+{
+	const int32 Port = GetDefault<UAudioLoomOscSettings>()->ListenPort;
+	const bool bAvailable = UAudioLoomOscSubsystem::IsPortAvailable(Port);
+	if (PortStatusText.IsValid())
+	{
+		PortStatusText->SetText(bAvailable
+			? FText::Format(LOCTEXT("PortAvailable", "Port {0} available"), FText::AsNumber(Port))
+			: FText::Format(LOCTEXT("PortInUse", "Port {0} in use"), FText::AsNumber(Port)));
+		PortStatusText->SetColorAndOpacity(bAvailable
+			? FSlateColor(FLinearColor(0.2f, 1.f, 0.3f))
+			: FSlateColor(FLinearColor(1.f, 0.3f, 0.2f)));
+	}
+	return FReply::Handled();
+}
+
+FReply SAudioLoomPanel::OnStartStopOscClicked()
+{
+	UWorld* World = GetCurrentWorld();
+	if (!World) return FReply::Handled();
+
+	UAudioLoomOscSubsystem* Sub = World->GetSubsystem<UAudioLoomOscSubsystem>();
+	if (!Sub) return FReply::Handled();
+
+	if (Sub->IsListening())
+	{
+		Sub->StopListening();
+		if (PortStatusText.IsValid())
+		{
+			PortStatusText->SetText(LOCTEXT("OscStopped", "OSC stopped"));
+			PortStatusText->SetColorAndOpacity(FSlateColor::UseSubduedForeground());
+		}
+	}
+	else
+	{
+		if (Sub->StartListening())
+		{
+			if (PortStatusText.IsValid())
+			{
+				PortStatusText->SetText(LOCTEXT("OscListening", "OSC listening"));
+				PortStatusText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 1.f, 0.3f)));
+			}
+		}
+		else
+		{
+			if (PortStatusText.IsValid())
+			{
+				PortStatusText->SetText(LOCTEXT("OscStartFailed", "Failed to start — check port"));
+				PortStatusText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.3f, 0.2f)));
+			}
+		}
+	}
+	if (ListView.IsValid()) ListView->Invalidate(EInvalidateWidgetReason::Layout);
 	return FReply::Handled();
 }
 
@@ -222,25 +451,31 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 				]
 			]
 
-			// Sound name
+				// Sound picker
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.f)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
-				SNew(STextBlock)
-				.Text_Lambda([WeakComp]()
+				SNew(SObjectPropertyEntryBox)
+				.ObjectPath(TAttribute<FString>::CreateLambda([WeakComp]()
 				{
-					if (WeakComp.IsValid() && WeakComp->SoundWave)
-						return FText::FromString(WeakComp->SoundWave->GetName());
-					return LOCTEXT("NoSound", "(none)");
-				})
-				.ToolTipText_Lambda([WeakComp]()
+					if (!WeakComp.IsValid() || !WeakComp->SoundWave) return FString();
+					return WeakComp->SoundWave->GetPathName();
+				}))
+				.OnObjectChanged_Lambda([WeakComp](const FAssetData& AssetData)
 				{
-					if (WeakComp.IsValid() && WeakComp->SoundWave)
-						return FText::FromString(WeakComp->SoundWave->GetPathName());
-					return FText();
+					if (!WeakComp.IsValid()) return;
+					UObject* Obj = AssetData.GetAsset();
+					WeakComp->SoundWave = Cast<USoundWave>(Obj);
+					WeakComp->Modify();
 				})
+				.AllowedClass(USoundWave::StaticClass())
+				.DisplayThumbnail(false)
+				.DisplayCompactSize(true)
+				.EnableContentPicker(true)
+				.AllowClear(true)
+				.ToolTipText(LOCTEXT("SoundPickerTip", "Select sound from Content Browser or drag-drop"))
 			]
 
 			// Device dropdown
@@ -394,6 +629,78 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 					}
 				})
 				.ToolTipText(LOCTEXT("BeginPlayTip", "Auto-play when game / PIE starts"))
+			]
+
+			// OSC Address (base for /play, /stop, /loop)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.2f)
+			.VAlign(VAlign_Center)
+			.Padding(4.f, 2.f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.f)
+				[
+					SNew(SEditableTextBox)
+					.Text_Lambda([WeakComp]()
+					{
+						if (!WeakComp.IsValid()) return FText();
+						FString Addr = WeakComp->OscAddress;
+						return FText::FromString(Addr.IsEmpty() ? WeakComp->GetOscAddress() : Addr);
+					})
+					.OnTextCommitted_Lambda([WeakComp](const FText& T, ETextCommit::Type)
+					{
+						if (!WeakComp.IsValid()) return;
+						FString S = T.ToString().TrimStartAndEnd();
+						if (S.IsEmpty())
+						{
+							WeakComp->OscAddress = S;
+							WeakComp->Modify();
+							return;
+						}
+						if (WeakComp->SetOscAddress(S))
+						{
+							WeakComp->Modify();
+						}
+					})
+					.Font(FAppStyle::GetFontStyle("SmallFont"))
+					.ToolTipText(LOCTEXT("OscAddrTip", "Base OSC address. Empty = default. Play=/base/play, Stop=/base/stop, Loop=/base/loop"))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2.f, 0.f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([WeakComp]()
+					{
+						if (!WeakComp.IsValid()) return FText();
+						FString Addr = WeakComp->OscAddress;
+						if (Addr.IsEmpty()) return FText();
+						return UAudioLoomBlueprintLibrary::IsOscAddressValid(Addr)
+							? FText::FromString(TEXT("\u2713"))
+							: FText::FromString(TEXT("\u2717"));
+					})
+					.ColorAndOpacity_Lambda([WeakComp]()
+					{
+						if (!WeakComp.IsValid()) return FSlateColor::UseSubduedForeground();
+						FString Addr = WeakComp->OscAddress;
+						if (Addr.IsEmpty()) return FSlateColor::UseSubduedForeground();
+						return UAudioLoomBlueprintLibrary::IsOscAddressValid(Addr)
+							? FSlateColor(FLinearColor(0.2f, 1.f, 0.3f))
+							: FSlateColor(FLinearColor(1.f, 0.3f, 0.2f));
+					})
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					.ToolTipText_Lambda([WeakComp]()
+					{
+						if (!WeakComp.IsValid()) return FText();
+						FString Addr = WeakComp->OscAddress;
+						if (Addr.IsEmpty()) return LOCTEXT("OscUsingDefault", "Using default address");
+						return UAudioLoomBlueprintLibrary::IsOscAddressValid(Addr)
+							? LOCTEXT("OscValid", "Valid OSC address")
+							: LOCTEXT("OscInvalid", "Invalid — must start with /, use valid path chars");
+					})
+				]
 			]
 
 			// Status

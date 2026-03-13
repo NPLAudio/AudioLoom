@@ -37,4 +37,8 @@ private:
 		const TSharedRef<STableViewBase>& OwnerTable);
 
 	FReply OnSelectInViewport(TWeakObjectPtr<UAudioLoomWasapiComponent> Component);
+	FReply OnCheckPortClicked();
+	FReply OnStartStopOscClicked();
+
+	TSharedPtr<STextBlock> PortStatusText;
 };

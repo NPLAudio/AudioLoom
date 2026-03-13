@@ -2,6 +2,8 @@
 
 #include "AudioLoomWasapiComponent.h"
 #include "AudioLoomPcmLoader.h"
+#include "AudioLoomBlueprintLibrary.h"
+#include "AudioLoomOscSubsystem.h"
 #include "WasapiAudioBackend.h"
 #include "Sound/SoundWave.h"
 #include "UObject/UnrealType.h"
@@ -82,6 +84,14 @@ void UAudioLoomWasapiComponent::Play()
 	}
 
 	Backend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop);
+
+	if (UWorld* W = GetWorld())
+	{
+		if (UAudioLoomOscSubsystem* Sub = W->GetSubsystem<UAudioLoomOscSubsystem>())
+		{
+			Sub->SendStateUpdate(this, true);
+		}
+	}
 #endif
 }
 
@@ -91,6 +101,13 @@ void UAudioLoomWasapiComponent::Stop()
 	if (Backend)
 	{
 		Backend->Stop();
+		if (UWorld* W = GetWorld())
+		{
+			if (UAudioLoomOscSubsystem* Sub = W->GetSubsystem<UAudioLoomOscSubsystem>())
+			{
+				Sub->SendStateUpdate(this, false);
+			}
+		}
 	}
 #endif
 }
@@ -102,5 +119,38 @@ bool UAudioLoomWasapiComponent::IsPlaying() const
 #else
 	return false;
 #endif
+}
+
+void UAudioLoomWasapiComponent::SetLoop(bool bInLoop)
+{
+	bLoop = bInLoop;
+}
+
+FString UAudioLoomWasapiComponent::GetOscAddress() const
+{
+	if (!OscAddress.IsEmpty())
+	{
+		FString Normalized = UAudioLoomBlueprintLibrary::NormalizeOscAddress(OscAddress);
+		if (!Normalized.IsEmpty()) return Normalized;
+	}
+	AActor* Owner = GetOwner();
+	if (!Owner) return TEXT("/audioloom/unnamed");
+	TArray<UAudioLoomWasapiComponent*> Comps;
+	Owner->GetComponents(Comps);
+	int32 Idx = Comps.IndexOfByKey(this);
+	return FString::Printf(TEXT("/audioloom/%s/%d"), *Owner->GetName(), FMath::Max(0, Idx));
+}
+
+bool UAudioLoomWasapiComponent::SetOscAddress(const FString& InAddress)
+{
+	if (InAddress.IsEmpty())
+	{
+		OscAddress = InAddress;
+		return true;
+	}
+	FString Normalized = UAudioLoomBlueprintLibrary::NormalizeOscAddress(InAddress);
+	if (Normalized.IsEmpty()) return false;
+	OscAddress = Normalized;
+	return true;
 }
 

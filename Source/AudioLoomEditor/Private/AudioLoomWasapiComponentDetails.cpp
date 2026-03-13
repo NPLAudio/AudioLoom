@@ -2,6 +2,7 @@
 
 #include "AudioLoomWasapiComponentDetails.h"
 #include "AudioLoomWasapiComponent.h"
+#include "AudioLoomBlueprintLibrary.h"
 #include "WasapiDeviceEnumerator.h"
 #include "WasapiDeviceInfo.h"
 #include "DetailLayoutBuilder.h"
@@ -9,6 +10,8 @@
 #include "DetailWidgetRow.h"
 #include "PropertyHandle.h"
 #include "Widgets/Input/SComboButton.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Sound/SoundWave.h"
@@ -45,9 +48,11 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 
 	TSharedPtr<IPropertyHandle> DeviceIdHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, DeviceId));
 	TSharedPtr<IPropertyHandle> OutputChannelHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OutputChannel));
+	TSharedPtr<IPropertyHandle> OscAddressHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OscAddress));
 
 	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategory", "WASAPI Routing"));
 	IDetailCategoryBuilder& PlaybackCategory = DetailBuilder.EditCategory("AudioLoom|Playback", LOCTEXT("PlaybackCategory", "Playback"));
+	IDetailCategoryBuilder& OscCategory = DetailBuilder.EditCategory("AudioLoom|OSC", LOCTEXT("OscCategory", "OSC"));
 
 	// Sound Wave - use default property (supports drag-drop from Content Browser)
 	TSharedPtr<IPropertyHandle> SoundWaveHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, SoundWave));
@@ -200,6 +205,76 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 						return Val == 0 ? LOCTEXT("ChannelAll", "All (0)") : FText::FromString(FString::Printf(TEXT("Channel %d"), Val));
 					}
 					return LOCTEXT("ChannelAll", "All (0)");
+				})))
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+			]
+		];
+
+	// OSC Address with validation
+	OscCategory.AddProperty(OscAddressHandle)
+		.CustomWidget()
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("OscAddressLabel", "OSC Address"))
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+		]
+		.ValueContent()
+		.MinDesiredWidth(200.f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.f)
+			[
+				SNew(SEditableTextBox)
+				.Text(TAttribute<FText>::Create(TAttribute<FText>::FGetter::CreateLambda([OscAddressHandle, Component]()
+				{
+					FString Val;
+					if (OscAddressHandle.IsValid() && OscAddressHandle->GetValue(Val) == FPropertyAccess::Success)
+					{
+						return FText::FromString(Val.IsEmpty() && Component ? Component->GetOscAddress() : Val);
+					}
+					return FText();
+				})))
+				.OnTextCommitted_Lambda([OscAddressHandle, Component](const FText& T, ETextCommit::Type)
+				{
+					if (!OscAddressHandle.IsValid()) return;
+					FString S = T.ToString().TrimStartAndEnd();
+					if (Component)
+					{
+						if (!Component->SetOscAddress(S)) return;
+						S = Component->OscAddress;
+					}
+					OscAddressHandle->SetValue(S);
+					OscAddressHandle->NotifyPostChange(EPropertyChangeType::ValueSet);
+				})
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+				.ToolTipText(LOCTEXT("OscAddrTip", "Base address. Empty = default. Triggers: /base/play, /base/stop, /base/loop"))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(4.f, 0.f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+				.Text(TAttribute<FText>::Create(TAttribute<FText>::FGetter::CreateLambda([OscAddressHandle, Component]()
+				{
+					FString Val;
+					if (!OscAddressHandle.IsValid() || OscAddressHandle->GetValue(Val) != FPropertyAccess::Success)
+						return LOCTEXT("OscDefault", "(default)");
+					if (Val.IsEmpty()) return LOCTEXT("OscDefault", "(default)");
+					return UAudioLoomBlueprintLibrary::IsOscAddressValid(Val)
+						? LOCTEXT("OscValidLabel", "Valid")
+						: LOCTEXT("OscInvalidLabel", "Invalid");
+				})))
+				.ColorAndOpacity(TAttribute<FSlateColor>::Create(TAttribute<FSlateColor>::FGetter::CreateLambda([OscAddressHandle]()
+				{
+					FString Val;
+					if (!OscAddressHandle.IsValid() || OscAddressHandle->GetValue(Val) != FPropertyAccess::Success || Val.IsEmpty())
+						return FSlateColor::UseSubduedForeground();
+					return UAudioLoomBlueprintLibrary::IsOscAddressValid(Val)
+						? FSlateColor(FLinearColor(0.2f, 1.f, 0.3f))
+						: FSlateColor(FLinearColor(1.f, 0.3f, 0.2f));
 				})))
 				.Font(IDetailLayoutBuilder::GetDetailFont())
 			]
