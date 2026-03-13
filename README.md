@@ -1,6 +1,6 @@
 # AudioLoom
 
-Unreal Engine plugin for routing audio to specific output devices and channels, with OSC support for external control and monitoring. Use for multi-speaker setups, spatial audio routing, and show control integration.
+Unreal Engine plugin for routing audio to specific output devices and channels, with OSC support for external control and monitoring. Use for multi-speaker setups, spatial audio routing, and show control integration. [GitHub](https://github.com/dhhuston/AudioLoom)
 
 ---
 
@@ -16,6 +16,7 @@ Unreal Engine plugin for routing audio to specific output devices and channels, 
 - [Blueprint API](#blueprint-api)
 - [Project Settings](#project-settings)
 - [Walkthrough Guides](#walkthrough-guides)
+- [License](#license)
 
 ---
 
@@ -50,7 +51,7 @@ AudioLoom requires the **OSC** plugin (included with Unreal Engine). If it is di
 
 | Requirement | Details |
 |-------------|---------|
-| **Engine** | Unreal Engine 5.x (tested on 5.7) |
+| **Engine** | Unreal Engine 5.x (tested on 5.4, 5.7) |
 | **Platforms** | Windows (WASAPI), macOS (CoreAudio) |
 | **Plugins** | OSC (built-in) |
 
@@ -286,6 +287,6 @@ When a component starts or stops playing, AudioLoom sends:
 
 ---
 
-## License & Credits
+## License
 
-Copyright (c) 2026 AudioLoom Contributors.
+AudioLoom is released under the [MIT License](LICENSE).
