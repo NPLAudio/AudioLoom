@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "AudioLoom",
+	"Description": "WASAPI routing workflow: route sound files to any Windows audio device and select output channels.",
+	"Category": "Audio",
+	"CreatedBy": "AudioLoom",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "AudioLoom",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "AudioLoomEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
