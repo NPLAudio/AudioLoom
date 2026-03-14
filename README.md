@@ -1,6 +1,8 @@
 # AudioLoom
 
-<img src="Resources/Icon128.png" width="256" height="256" alt="AudioLoom" />
+<p align="center">
+  <img src="Resources/Icon128.png" width="256" height="256" alt="AudioLoom" />
+</p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buymeacoffee)](https://buymeacoffee.com/notpunny)
 
