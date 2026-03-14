@@ -1,6 +1,8 @@
-# AudioLoom [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buymeacoffee)](https://buymeacoffee.com/notpunny)
+# AudioLoom
 
-![AudioLoom](Resources/Icon128.png)
+<img src="Resources/Icon128.png" width="64" height="64" alt="AudioLoom" />
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buymeacoffee)](https://buymeacoffee.com/notpunny)
 
 Unreal Engine plugin for routing audio to specific output devices and channels, with OSC support for external control and monitoring. Use for multi-speaker setups, spatial audio routing, and show control integration. [GitHub](https://github.com/dhhuston/AudioLoom)
 
