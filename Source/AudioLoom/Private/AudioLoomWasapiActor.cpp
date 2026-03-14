@@ -11,6 +11,11 @@ AAudioLoomWasapiActor::AAudioLoomWasapiActor()
 	WasapiComponent = CreateDefaultSubobject<UAudioLoomWasapiComponent>(TEXT("WasapiComponent"));
 }
 
+FString AAudioLoomWasapiActor::GetDefaultActorLabel() const
+{
+	return TEXT("Audio Loom");
+}
+
 void AAudioLoomWasapiActor::BeginPlay()
 {
 	Super::BeginPlay();

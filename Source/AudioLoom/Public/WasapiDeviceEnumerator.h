@@ -6,7 +6,7 @@
 #include "WasapiDeviceInfo.h"
 
 /**
- * Enumerates audio output devices (WASAPI on Windows, CoreAudio on macOS).
+ * Enumerates audio output devices (Windows/macOS).
  */
 class AUDIOLOOM_API FWasapiDeviceEnumerator
 {

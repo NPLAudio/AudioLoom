@@ -362,43 +362,59 @@ static OSStatus MacIOProc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
 	const bool bLoop = Ctx->bLoop;
 	const int32 DevCh = FMath::Max(1, Ctx->DevChannels);
 
-	for (UInt32 bufIdx = 0; bufIdx < outOutputData->mNumberBuffers; ++bufIdx)
+	// CoreAudio uses non-interleaved layout: each buffer = one output channel.
+	// Iterate frame-by-frame across all channels to keep ReadOffset in sync.
+	UInt32 NumFrames = 0;
+	if (outOutputData->mNumberBuffers > 0 && outOutputData->mBuffers[0].mData)
 	{
-		float* pData = (float*)outOutputData->mBuffers[bufIdx].mData;
-		const UInt32 NumFrames = outOutputData->mBuffers[bufIdx].mDataByteSize / (sizeof(float) * DevCh);
+		const UInt32 chPerBuf = outOutputData->mBuffers[0].mNumberChannels;
+		NumFrames = outOutputData->mBuffers[0].mDataByteSize / (sizeof(float) * FMath::Max(1u, chPerBuf));
+	}
+	if (NumFrames == 0) return noErr;
 
-		for (UInt32 f = 0; f < NumFrames; ++f)
+	for (UInt32 f = 0; f < NumFrames; ++f)
+	{
+		if (Ctx->bStopRequested) break;
+
+		int64 R = Ctx->ReadOffset.load(std::memory_order_relaxed);
+		if (bLoop && TotalFrames > 0)
 		{
-			if (Ctx->bStopRequested) break;
+			R = R % TotalFrames;
+		}
+		const int64 SampleOffset = R * SrcCh;
 
-			int64 R = Ctx->ReadOffset.load(std::memory_order_relaxed);
-			if (bLoop && TotalFrames > 0)
-			{
-				R = R % TotalFrames;
-			}
-			const int64 SampleOffset = R * SrcCh;
+		UInt32 channelOffset = 0;
+		for (UInt32 bufIdx = 0; bufIdx < outOutputData->mNumberBuffers; ++bufIdx)
+		{
+			AudioBuffer& buf = outOutputData->mBuffers[bufIdx];
+			if (!buf.mData) continue;
+			const UInt32 chInBuf = FMath::Max(1u, buf.mNumberChannels);
+			float* pData = (float*)buf.mData;
 
-			for (int32 ch = 0; ch < DevCh; ++ch)
+			for (UInt32 subCh = 0; subCh < chInBuf; ++subCh)
 			{
+				const int32 logicalCh = static_cast<int32>(channelOffset + subCh);
 				float Sample = 0.0f;
 				if (OutCh == 0)
 				{
-					if (ch < SrcCh && SampleOffset + ch < Ctx->TotalFrames * SrcCh)
+					if (logicalCh < SrcCh && SampleOffset + logicalCh < Ctx->TotalFrames * SrcCh)
 					{
-						Sample = Ctx->PCM[SampleOffset + ch];
+						Sample = Ctx->PCM[SampleOffset + logicalCh];
 					}
 				}
-				else if (ch + 1 == OutCh)
+				else if (logicalCh + 1 == OutCh)
 				{
 					if (SampleOffset < Ctx->TotalFrames * SrcCh)
 					{
 						Sample = Ctx->PCM[SampleOffset];
 					}
 				}
-				*pData++ = Sample;
+				// Non-interleaved: one sample per channel; buffer holds consecutive frames for this channel
+				pData[f * chInBuf + subCh] = Sample;
 			}
-			Ctx->ReadOffset.store(R + 1, std::memory_order_relaxed);
+			channelOffset += chInBuf;
 		}
+		Ctx->ReadOffset.store(R + 1, std::memory_order_relaxed);
 	}
 	return noErr;
 }
@@ -413,6 +429,8 @@ public:
 	int32 SourceChannels = 1;
 	int32 OutputChannel = 0;
 	FString DeviceId;
+	bool bExclusive = false;     // Unused on Mac; kept for Start() signature compatibility
+	int32 BufferSizeMs = 0;      // Unused on Mac; kept for Start() signature compatibility
 	std::thread PlaybackThread;
 
 	void RunPlayback()

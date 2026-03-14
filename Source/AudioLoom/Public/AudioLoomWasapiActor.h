@@ -9,7 +9,7 @@
 class UAudioLoomWasapiComponent;
 
 /**
- * Convenience actor for audio routing (WASAPI on Windows, CoreAudio on macOS).
+ * Convenience actor for audio routing (Windows/macOS).
  * Place in level, configure SoundWave + device + channel on the root component, then Play.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "Audio Loom"))
@@ -22,6 +22,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AudioLoom")
 	TObjectPtr<UAudioLoomWasapiComponent> WasapiComponent;
+
+	/** Default label for newly placed actors (avoids "AudioLoomWasapi" in editor) */
+	virtual FString GetDefaultActorLabel() const override;
 
 protected:
 	virtual void BeginPlay() override;

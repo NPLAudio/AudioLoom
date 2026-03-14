@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buymeacoffee)](https://buymeacoffee.com/notpunny)
 
-Unreal Engine plugin for routing audio to specific output devices and channels, with OSC support for external control and monitoring. Use for multi-speaker setups, spatial audio routing, and show control integration. [GitHub](https://github.com/dhhuston/AudioLoom)
+Unreal Engine plugin for routing audio to specific output devices and channels, with OSC support for external control and monitoring. Use for multi-speaker setups, spatial audio routing, and show control integration. [GitHub](https://github.com/NPLAudio/AudioLoom)
 
 ---
 
@@ -65,7 +65,7 @@ AudioLoom requires the **OSC** plugin (included with Unreal Engine). If it is di
 | Requirement | Details |
 |-------------|---------|
 | **Engine** | Unreal Engine 5.x (tested on 5.4, 5.7) |
-| **Platforms** | Windows (WASAPI), macOS (CoreAudio) |
+| **Platforms** | Windows, macOS |
 | **Plugins** | OSC (built-in) |
 
 ---
@@ -85,7 +85,7 @@ AudioLoom requires the **OSC** plugin (included with Unreal Engine). If it is di
 
 ## Quick Start
 
-1. Add an **Audio Loom WASAPI** actor to your level:
+1. Add an **Audio Loom** actor to your level:
    - **Place Actors** → search “Audio Loom” → drag into the level
 
 2. Assign a sound:
@@ -106,7 +106,7 @@ AudioLoom requires the **OSC** plugin (included with Unreal Engine). If it is di
 
 ### Component vs Actor
 
-- **Audio Loom WASAPI** actor — Pre-made actor with a `UAudioLoomWasapiComponent`. Good for quick setup.
+- **Audio Loom** actor — Pre-made actor with a `UAudioLoomWasapiComponent`. Good for quick setup.
 - **AudioLoomWasapiComponent** — Can be added to any actor via **Add Component** → search “Audio Loom”.
 
 Both share the same features.
@@ -258,7 +258,7 @@ When a component starts or stops playing, AudioLoom sends:
 
 ### A. Basic routing to a speaker
 
-1. Place an **Audio Loom WASAPI** actor.
+1. Place an **Audio Loom** actor.
 2. Assign a `USoundWave` in Details or the manager.
 3. Set **Device** to the target output in the manager.
 4. Set **Output Channel** to 0 (all) or a specific channel.

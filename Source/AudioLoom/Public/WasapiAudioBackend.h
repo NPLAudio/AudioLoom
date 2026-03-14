@@ -8,7 +8,7 @@
 class FWasapiAudioBackendImpl;
 
 /**
- * WASAPI audio playback backend.
+ * Audio playback backend (Windows/macOS).
  * Routes PCM data to a specific Windows audio output device.
  * Windows-only; no-op on other platforms.
  */

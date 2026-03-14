@@ -52,11 +52,7 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 	TSharedPtr<IPropertyHandle> BufferSizeMsHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, BufferSizeMs));
 	TSharedPtr<IPropertyHandle> OscAddressHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OscAddress));
 
-#if PLATFORM_WINDOWS
-	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategory", "WASAPI Routing"));
-#else
-	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategoryMac", "Device Routing"));
-#endif
+	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategory", "AudioLoom"));
 	IDetailCategoryBuilder& PlaybackCategory = DetailBuilder.EditCategory("AudioLoom|Playback", LOCTEXT("PlaybackCategory", "Playback"));
 	IDetailCategoryBuilder& OscCategory = DetailBuilder.EditCategory("AudioLoom|OSC", LOCTEXT("OscCategory", "OSC"));
 

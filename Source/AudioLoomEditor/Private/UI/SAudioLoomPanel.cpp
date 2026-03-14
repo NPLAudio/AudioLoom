@@ -28,6 +28,22 @@
 
 #define LOCTEXT_NAMESPACE "SAudioLoomPanel"
 
+// FillWidth coefficients for proportional column sizing (header and rows must match)
+namespace AudioLoomColumnFill
+{
+	static constexpr float Actor = 1.4f;
+	static constexpr float Sound = 1.1f;
+	static constexpr float Device = 1.6f;
+	static constexpr float Channel = 0.55f;
+	static constexpr float LL = 0.4f;
+	static constexpr float Buf = 0.5f;
+	static constexpr float Loop = 0.45f;
+	static constexpr float Begin = 0.5f;
+	static constexpr float OscAddr = 1.4f;
+	static constexpr float Status = 0.65f;
+	static constexpr float Controls = 0.9f;
+}
+
 void SAudioLoomPanel::Construct(const FArguments& InArgs)
 {
 	RegisterActiveTimer(2.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SAudioLoomPanel::OnRefreshTimer));
@@ -218,43 +234,54 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 			]
 
 			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.f, 0.f, 0.f, 4.f)
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.2f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColActor", "Actor")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColSound", "Sound")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(1.2f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColDevice", "Device")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(0.6f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColChannel", "Ch")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(0.4f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColLL", "LL")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(0.35f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColBuf", "Buf")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(0.4f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColLoop", "Loop")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(0.5f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColBegin", "Begin")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(1.2f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColOscAddr", "OSC Address")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(0.5f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColStatus", "Status")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-				+ SHorizontalBox::Slot().FillWidth(0.8f).Padding(4.f, 2.f)
-					[SNew(STextBlock).Text(LOCTEXT("ColControls", "Controls")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
-			]
-			+ SVerticalBox::Slot()
 			.FillHeight(1.f)
 			[
 				SNew(SScrollBox)
+				.Orientation(Orient_Horizontal)
 				+ SScrollBox::Slot()
 				[
-					SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>)
-					.ListItemsSource(&ListViewItems)
-					.OnGenerateRow(this, &SAudioLoomPanel::GenerateComponentRow)
-					.SelectionMode(ESelectionMode::None)
+					SNew(SBox)
+					.MinDesiredWidth(900.f)
+					[
+						SNew(SVerticalBox)
+						// Header row — same width as list rows, scrolls horizontally with list
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.f, 0.f, 0.f, 4.f)
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Actor).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColActor", "Actor")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Sound).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColSound", "Sound")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Device).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColDevice", "Device")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Channel).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColChannel", "Ch")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::LL).Padding(4.f, 2.f)
+								[SNew(SBox).Visibility(PLATFORM_WINDOWS ? EVisibility::Visible : EVisibility::Collapsed)[SNew(STextBlock).Text(LOCTEXT("ColLL", "LL")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Buf).Padding(4.f, 2.f)
+								[SNew(SBox).Visibility(PLATFORM_WINDOWS ? EVisibility::Visible : EVisibility::Collapsed)[SNew(STextBlock).Text(LOCTEXT("ColBuf", "Buf")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Loop).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColLoop", "Loop")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Begin).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColBegin", "Begin")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::OscAddr).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColOscAddr", "OSC Address")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Status).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColStatus", "Status")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+							+ SHorizontalBox::Slot().FillWidth(AudioLoomColumnFill::Controls).Padding(4.f, 2.f)
+								[SNew(STextBlock).Text(LOCTEXT("ColControls", "Controls")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+						]
+						+ SVerticalBox::Slot()
+						.FillHeight(1.f)
+						[
+							SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>)
+							.ListItemsSource(&ListViewItems)
+							.OnGenerateRow(this, &SAudioLoomPanel::GenerateComponentRow)
+							.SelectionMode(ESelectionMode::None)
+						]
+					]
 				]
 			]
 
@@ -434,29 +461,31 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Actor name
 			+ SHorizontalBox::Slot()
-			.FillWidth(1.2f)
+			.FillWidth(AudioLoomColumnFill::Actor)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				[
 					SNew(SButton)
 					.Text_Lambda([WeakComp]()
 					{
 						if (AActor* Owner = WeakComp.IsValid() ? WeakComp->GetOwner() : nullptr)
-							return FText::FromString(Owner ? Owner->GetActorLabel() : TEXT("—"));
+						{
+							if (!Owner) return FText::FromString(TEXT("—"));
+							FString Label = Owner->GetActorLabel();
+							// Display "Audio Loom" instead of "AudioLoomWasapi" (class-derived default)
+							Label.ReplaceInline(TEXT("AudioLoomWasapi"), TEXT("Audio Loom"), ESearchCase::IgnoreCase);
+							return FText::FromString(Label.IsEmpty() ? TEXT("—") : Label);
+						}
 						return LOCTEXT("Invalid", "—");
 					})
 					.OnClicked_Lambda([this, WeakComp]() { return OnSelectInViewport(WeakComp); })
 					.ToolTipText(LOCTEXT("SelectInViewport", "Select actor in viewport"))
-				]
+					.HAlign(HAlign_Left)
 			]
 
-				// Sound picker
+			// Sound picker
 			+ SHorizontalBox::Slot()
-			.FillWidth(1.f)
+			.FillWidth(AudioLoomColumnFill::Sound)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -483,7 +512,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Device dropdown
 			+ SHorizontalBox::Slot()
-			.FillWidth(1.2f)
+			.FillWidth(AudioLoomColumnFill::Device)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -543,9 +572,9 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 				]
 			]
 
-				// Channel dropdown
+			// Channel dropdown
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.6f)
+			.FillWidth(AudioLoomColumnFill::Channel)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -595,7 +624,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Low latency mode checkbox (Windows only)
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.4f)
+			.FillWidth(AudioLoomColumnFill::LL)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -624,7 +653,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Buffer size (ms) for low latency mode (Windows only)
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.35f)
+			.FillWidth(AudioLoomColumnFill::Buf)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -649,7 +678,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Loop checkbox
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.4f)
+			.FillWidth(AudioLoomColumnFill::Loop)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -671,7 +700,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Play on Begin Play checkbox
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.5f)
+			.FillWidth(AudioLoomColumnFill::Begin)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -693,7 +722,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// OSC Address (base for /play, /stop, /loop)
 			+ SHorizontalBox::Slot()
-			.FillWidth(1.2f)
+			.FillWidth(AudioLoomColumnFill::OscAddr)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -765,7 +794,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Status
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.5f)
+			.FillWidth(AudioLoomColumnFill::Status)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
@@ -786,7 +815,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 
 			// Play / Stop
 			+ SHorizontalBox::Slot()
-			.FillWidth(0.8f)
+			.FillWidth(AudioLoomColumnFill::Controls)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
