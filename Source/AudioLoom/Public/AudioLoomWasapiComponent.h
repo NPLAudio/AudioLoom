@@ -9,10 +9,10 @@
 class USoundWave;
 
 /**
- * Routes sound playback to a specific audio device and channel (WASAPI on Windows, CoreAudio on macOS).
+ * Routes sound playback to a specific audio device and channel (Windows/macOS).
  * Attach to any Actor: drop a sound, select device and channel, play.
  */
-UCLASS(ClassGroup = (Audio), meta = (BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (Audio), meta = (BlueprintSpawnableComponent, DisplayName = "Audio Loom"))
 class AUDIOLOOM_API UAudioLoomWasapiComponent : public UActorComponent
 {
 	GENERATED_BODY()
@@ -26,7 +26,7 @@ public:
 
 	/**
 	 * Device ID. Set via details customization dropdown.
-	 * Empty = default output device. (WASAPI on Windows, CoreAudio on macOS.)
+	 * Empty = default output device.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Routing")
 	FString DeviceId;

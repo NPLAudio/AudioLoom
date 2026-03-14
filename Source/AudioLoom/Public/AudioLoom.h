@@ -10,7 +10,7 @@ AUDIOLOOM_API DECLARE_LOG_CATEGORY_EXTERN(LogAudioLoom, Log, All);
 
 /**
  * AudioLoom runtime module.
- * Provides audio device routing and playback (WASAPI on Windows, CoreAudio on macOS).
+ * Provides audio device routing and playback (Windows/macOS).
  */
 class AUDIOLOOM_API FAudioLoomModule : public IModuleInterface
 {
