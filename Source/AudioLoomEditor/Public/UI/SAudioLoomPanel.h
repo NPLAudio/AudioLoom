@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "WasapiDeviceInfo.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
@@ -31,6 +32,7 @@ private:
 	TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>> ComponentList;
 	TArray<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>> ListViewItems;
 	TSharedPtr<SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>> ListView;
+	TArray<FWasapiDeviceInfo> CachedDevices;
 
 	TSharedRef<ITableRow> GenerateComponentRow(
 		TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>> Item,

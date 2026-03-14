@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 
 /**
- * Information about a WASAPI audio output device.
+ * Information about an audio output device (WASAPI on Windows, CoreAudio on macOS).
  * Used for device enumeration and selection in the editor.
  */
 struct AUDIOLOOM_API FWasapiDeviceInfo

@@ -52,7 +52,11 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 	TSharedPtr<IPropertyHandle> BufferSizeMsHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, BufferSizeMs));
 	TSharedPtr<IPropertyHandle> OscAddressHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OscAddress));
 
+#if PLATFORM_WINDOWS
 	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategory", "WASAPI Routing"));
+#else
+	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategoryMac", "Device Routing"));
+#endif
 	IDetailCategoryBuilder& PlaybackCategory = DetailBuilder.EditCategory("AudioLoom|Playback", LOCTEXT("PlaybackCategory", "Playback"));
 	IDetailCategoryBuilder& OscCategory = DetailBuilder.EditCategory("AudioLoom|OSC", LOCTEXT("OscCategory", "OSC"));
 
@@ -212,8 +216,14 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 			]
 		];
 
-	// Low Latency Mode (Windows only) - explicit checkbox
+	// Low Latency Mode (Windows only)
+	auto LLVisibility = TAttribute<EVisibility>::Create(TAttribute<EVisibility>::FGetter::CreateLambda([]()
+	{
+		return PLATFORM_WINDOWS ? EVisibility::Visible : EVisibility::Collapsed;
+	}));
+
 	RoutingCategory.AddProperty(ExclusiveHandle)
+		.Visibility(LLVisibility)
 		.CustomWidget()
 		.NameContent()
 		[
@@ -247,6 +257,7 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 
 	// Buffer size (ms) - for low latency mode
 	RoutingCategory.AddProperty(BufferSizeMsHandle)
+		.Visibility(LLVisibility)
 		.DisplayName(LOCTEXT("BufferSizeLabel", "Buffer Size (ms)"))
 		.ToolTip(LOCTEXT("BufferSizeTip", "Buffer duration in ms for low latency mode. 0 = driver default. Typical 3-20 ms."));
 

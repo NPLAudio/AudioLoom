@@ -2,6 +2,8 @@
 
 #include "AudioLoom.h"
 
+DEFINE_LOG_CATEGORY(LogAudioLoom);
+
 #define LOCTEXT_NAMESPACE "FAudioLoomModule"
 
 void FAudioLoomModule::StartupModule()

@@ -1,5 +1,8 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+using System;
+using System.IO;
+using EpicGames.Core;
 using UnrealBuildTool;
 
 public class AudioLoom : ModuleRules
@@ -37,5 +40,6 @@ public class AudioLoom : ModuleRules
 			// CoreAudio for device enumeration and output
 			PublicFrameworks.AddRange(new string[] { "CoreAudio", "AudioToolbox", "CoreFoundation" });
 		}
+
 	}
 }

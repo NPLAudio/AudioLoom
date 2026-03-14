@@ -11,7 +11,7 @@
 UAudioLoomWasapiComponent::UAudioLoomWasapiComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-	Backend = new FWasapiAudioBackend();
+	WasapiBackend = new FWasapiAudioBackend();
 }
 
 void UAudioLoomWasapiComponent::BeginPlay()
@@ -43,10 +43,10 @@ void UAudioLoomWasapiComponent::PostEditChangeProperty(FPropertyChangedEvent& Pr
 void UAudioLoomWasapiComponent::BeginDestroy()
 {
 	Stop();
-	if (Backend)
+	if (WasapiBackend)
 	{
-		delete Backend;
-		Backend = nullptr;
+		delete WasapiBackend;
+		WasapiBackend = nullptr;
 	}
 	Super::BeginDestroy();
 }
@@ -54,10 +54,11 @@ void UAudioLoomWasapiComponent::BeginDestroy()
 void UAudioLoomWasapiComponent::Play()
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
-	if (!Backend || !SoundWave)
+	if (!SoundWave)
 	{
 		return;
 	}
+	if (!WasapiBackend) return;
 
 	FAudioLoomPcmResult Result = FAudioLoomPcmLoader::LoadFromSoundWave(SoundWave);
 	if (!Result.bSuccess)
@@ -66,26 +67,33 @@ void UAudioLoomWasapiComponent::Play()
 		return;
 	}
 
-	// Resample to 48kHz if needed (simple linear interpolation for prototype)
+	// Resample to 48kHz if needed (per-channel to preserve stereo/multi-channel)
 	TArray<float> PCM = Result.PCM;
-	if (Result.SampleRate != 48000 && Result.SampleRate > 0)
+	if (Result.SampleRate != 48000 && Result.SampleRate > 0 && Result.NumChannels > 0)
 	{
 		const float Ratio = 48000.0f / Result.SampleRate;
-		const int32 NewNumSamples = FMath::RoundToInt(PCM.Num() * Ratio);
+		const int32 NumCh = FMath::Max(1, Result.NumChannels);
+		const int32 SrcFrames = PCM.Num() / NumCh;
+		const int32 DstFrames = FMath::RoundToInt(SrcFrames * Ratio);
 		TArray<float> Resampled;
-		Resampled.SetNum(NewNumSamples);
-		for (int32 i = 0; i < NewNumSamples; ++i)
+		Resampled.SetNum(DstFrames * NumCh);
+		for (int32 ch = 0; ch < NumCh; ++ch)
 		{
-			const float SrcIdx = i / Ratio;
-			const int32 Idx0 = FMath::Clamp(FMath::FloorToInt(SrcIdx), 0, PCM.Num() - 1);
-			const int32 Idx1 = FMath::Clamp(Idx0 + 1, 0, PCM.Num() - 1);
-			const float Frac = SrcIdx - Idx0;
-			Resampled[i] = FMath::Lerp(PCM[Idx0], PCM[Idx1], Frac);
+			for (int32 i = 0; i < DstFrames; ++i)
+			{
+				const float SrcIdx = i / Ratio;
+				const int32 F0 = FMath::Clamp(FMath::FloorToInt(SrcIdx), 0, SrcFrames - 1);
+				const int32 F1 = FMath::Clamp(F0 + 1, 0, SrcFrames - 1);
+				const float Frac = SrcIdx - F0;
+				const float V0 = PCM[F0 * NumCh + ch];
+				const float V1 = PCM[F1 * NumCh + ch];
+				Resampled[i * NumCh + ch] = FMath::Lerp(V0, V1, Frac);
+			}
 		}
 		PCM = MoveTemp(Resampled);
 	}
 
-	Backend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop, bUseExclusiveMode, BufferSizeMs);
+	WasapiBackend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop, bUseExclusiveMode, BufferSizeMs);
 
 	if (UWorld* W = GetWorld())
 	{
@@ -100,15 +108,15 @@ void UAudioLoomWasapiComponent::Play()
 void UAudioLoomWasapiComponent::Stop()
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
-	if (Backend)
+	if (WasapiBackend)
 	{
-		Backend->Stop();
-		if (UWorld* W = GetWorld())
+		WasapiBackend->Stop();
+	}
+	if (UWorld* W = GetWorld())
+	{
+		if (UAudioLoomOscSubsystem* Sub = W->GetSubsystem<UAudioLoomOscSubsystem>())
 		{
-			if (UAudioLoomOscSubsystem* Sub = W->GetSubsystem<UAudioLoomOscSubsystem>())
-			{
-				Sub->SendStateUpdate(this, false);
-			}
+			Sub->SendStateUpdate(this, false);
 		}
 	}
 #endif
@@ -117,7 +125,7 @@ void UAudioLoomWasapiComponent::Stop()
 bool UAudioLoomWasapiComponent::IsPlaying() const
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
-	return Backend && Backend->IsPlaying();
+	return WasapiBackend && WasapiBackend->IsPlaying();
 #else
 	return false;
 #endif

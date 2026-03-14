@@ -14,3 +14,6 @@ DerivedDataCache/
 # OS
 .DS_Store
 Thumbs.db
+
+# Optional third-party (user-provided, not distributed)
+ThirdParty/ASIO/

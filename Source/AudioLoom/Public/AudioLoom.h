@@ -3,11 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Logging/LogMacros.h"
 #include "Modules/ModuleManager.h"
+
+AUDIOLOOM_API DECLARE_LOG_CATEGORY_EXTERN(LogAudioLoom, Log, All);
 
 /**
  * AudioLoom runtime module.
- * Provides WASAPI device routing and playback.
+ * Provides audio device routing and playback (WASAPI on Windows, CoreAudio on macOS).
  */
 class AUDIOLOOM_API FAudioLoomModule : public IModuleInterface
 {

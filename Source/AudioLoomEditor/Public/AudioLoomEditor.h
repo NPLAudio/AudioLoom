@@ -10,7 +10,7 @@ class FSpawnTabArgs;
 
 /**
  * AudioLoom editor module.
- * Provides details customization, management window, and WASAPI device enumeration UI.
+ * Provides details customization, management window, and device enumeration UI.
  */
 class AUDIOLOOMEDITOR_API FAudioLoomEditorModule : public IModuleInterface
 {

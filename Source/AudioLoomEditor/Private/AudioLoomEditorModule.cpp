@@ -47,7 +47,7 @@ void FAudioLoomEditorModule::RegisterTab()
 		AudioLoomTabName,
 		FOnSpawnTab::CreateRaw(this, &FAudioLoomEditorModule::SpawnTab))
 		.SetDisplayName(LOCTEXT("AudioLoomTabTitle", "Audio Loom"))
-		.SetTooltipText(LOCTEXT("AudioLoomTabTooltip", "Manage WASAPI channel routing for all Audio Loom components in the world"))
+		.SetTooltipText(LOCTEXT("AudioLoomTabTooltip", "Manage audio channel routing for all Audio Loom components in the world"))
 		.SetGroup(MenuStructure.GetLevelEditorCategory());
 }
 

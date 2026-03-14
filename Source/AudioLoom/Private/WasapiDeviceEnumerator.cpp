@@ -13,7 +13,110 @@
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
+#include <propsys.h>
 #include "Windows/HideWindowsPlatformTypes.h"
+
+// PKEY_AudioEngine_DeviceFormat - device native format (channel count). Not in all SDK link libs.
+static const PROPERTYKEY PKEY_AudioEngine_DeviceFormat_Local = {
+	{ 0xf19f064d, 0x082c, 0x4e27, { 0xbc, 0x73, 0x68, 0x82, 0xa1, 0xbb, 0x8e, 0x4c } }, 0
+};
+
+/** Probe max channel count via IsFormatSupported in exclusive mode. */
+static int32 GetDeviceMaxChannels(IMMDevice* pDevice)
+{
+	IAudioClient* pClient = nullptr;
+	HRESULT hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&pClient);
+	if (FAILED(hr) || !pClient) return 2;
+
+	static const int32 ChannelMasks[] = { 0, KSAUDIO_SPEAKER_STEREO, KSAUDIO_SPEAKER_QUAD, KSAUDIO_SPEAKER_5POINT1, KSAUDIO_SPEAKER_7POINT1_SURROUND };
+	static const int32 ChannelCounts[] = { 1, 2, 4, 6, 8 };
+	int32 MaxChannels = 2;
+
+	for (int32 probeCh = 8; probeCh <= 32; probeCh += 2)
+	{
+		WAVEFORMATEXTENSIBLE wfx = {};
+		wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+		wfx.Format.nChannels = static_cast<WORD>(probeCh);
+		wfx.Format.nSamplesPerSec = 48000;
+		wfx.Format.wBitsPerSample = 32;
+		wfx.Format.nBlockAlign = wfx.Format.nChannels * 4;
+		wfx.Format.nAvgBytesPerSec = wfx.Format.nSamplesPerSec * wfx.Format.nBlockAlign;
+		wfx.Format.cbSize = 22;
+		wfx.Samples.wValidBitsPerSample = 32;
+		wfx.dwChannelMask = KSAUDIO_SPEAKER_DIRECTOUT;
+		wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+
+		WAVEFORMATEX* pClosest = nullptr;
+		hr = pClient->IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE, (WAVEFORMATEX*)&wfx, &pClosest);
+		if (pClosest) CoTaskMemFree(pClosest);
+		if (hr == S_OK)
+		{
+			MaxChannels = probeCh;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	if (MaxChannels == 2)
+	{
+		for (int32 i = 4; i >= 0; --i)
+		{
+			WAVEFORMATEXTENSIBLE wfx = {};
+			wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+			wfx.Format.nChannels = static_cast<WORD>(ChannelCounts[i]);
+			wfx.Format.nSamplesPerSec = 48000;
+			wfx.Format.wBitsPerSample = 32;
+			wfx.Format.nBlockAlign = wfx.Format.nChannels * 4;
+			wfx.Format.nAvgBytesPerSec = wfx.Format.nSamplesPerSec * wfx.Format.nBlockAlign;
+			wfx.Format.cbSize = 22;
+			wfx.Samples.wValidBitsPerSample = 32;
+			wfx.dwChannelMask = (ChannelCounts[i] == 1) ? KSAUDIO_SPEAKER_MONO : ChannelMasks[i];
+			wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+
+			WAVEFORMATEX* pClosest = nullptr;
+			hr = pClient->IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE, (WAVEFORMATEX*)&wfx, &pClosest);
+			if (pClosest) CoTaskMemFree(pClosest);
+			if (hr == S_OK)
+			{
+				MaxChannels = ChannelCounts[i];
+				break;
+			}
+		}
+	}
+
+	// Some drivers (e.g. virtual cables) don't support exclusive; try shared-mode probe for 4/6/8
+	if (MaxChannels == 2)
+	{
+		for (int32 probeCh : { 8, 6, 4 })
+		{
+			WAVEFORMATEXTENSIBLE wfx = {};
+			wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+			wfx.Format.nChannels = static_cast<WORD>(probeCh);
+			wfx.Format.nSamplesPerSec = 48000;
+			wfx.Format.wBitsPerSample = 32;
+			wfx.Format.nBlockAlign = wfx.Format.nChannels * 4;
+			wfx.Format.nAvgBytesPerSec = wfx.Format.nSamplesPerSec * wfx.Format.nBlockAlign;
+			wfx.Format.cbSize = 22;
+			wfx.Samples.wValidBitsPerSample = 32;
+			wfx.dwChannelMask = (probeCh == 8) ? KSAUDIO_SPEAKER_7POINT1_SURROUND : (probeCh == 6) ? KSAUDIO_SPEAKER_5POINT1 : KSAUDIO_SPEAKER_QUAD;
+			wfx.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+
+			WAVEFORMATEX* pClosest = nullptr;
+			hr = pClient->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, (WAVEFORMATEX*)&wfx, &pClosest);
+			if (pClosest) CoTaskMemFree(pClosest);
+			if (hr == S_OK)
+			{
+				MaxChannels = probeCh;
+				break;
+			}
+		}
+	}
+
+	pClient->Release();
+	return MaxChannels;
+}
 
 #pragma comment(lib, "ole32.lib")
 #endif
@@ -89,29 +192,59 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 				Info.FriendlyName = varName.pwszVal;
 			}
 			PropVariantClear(&varName);
-			pProps->Release();
-		}
 
-		IAudioClient* pAudioClient = nullptr;
-		hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&pAudioClient);
-		if (SUCCEEDED(hr) && pAudioClient)
-		{
-			WAVEFORMATEX* pwfx = nullptr;
-			hr = pAudioClient->GetMixFormat(&pwfx);
-			if (SUCCEEDED(hr) && pwfx)
+			// PKEY_AudioEngine_DeviceFormat - may still report stereo; probe with IsFormatSupported for actual max
+			int32 FormatChannels = 2;
+			PROPVARIANT varFormat;
+			PropVariantInit(&varFormat);
+			if (SUCCEEDED(pProps->GetValue(PKEY_AudioEngine_DeviceFormat_Local, &varFormat)) &&
+			    varFormat.vt == VT_BLOB && varFormat.blob.pBlobData && varFormat.blob.cbSize >= sizeof(WAVEFORMATEX))
 			{
-				Info.NumChannels = pwfx->nChannels;
+				WAVEFORMATEX* pwfx = (WAVEFORMATEX*)varFormat.blob.pBlobData;
+				FormatChannels = pwfx->nChannels;
 				Info.SampleRate = pwfx->nSamplesPerSec;
 				Info.BytesPerSample = pwfx->wBitsPerSample / 8;
-				if (pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
+				if (varFormat.blob.cbSize >= sizeof(WAVEFORMATEXTENSIBLE) && pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
 				{
 					WAVEFORMATEXTENSIBLE* pwfex = (WAVEFORMATEXTENSIBLE*)pwfx;
 					Info.BytesPerSample = pwfex->Format.wBitsPerSample / 8;
 				}
 				Info.bIsValid = true;
-				CoTaskMemFree(pwfx);
 			}
-			pAudioClient->Release();
+			PropVariantClear(&varFormat);
+			pProps->Release();
+
+			// Probe exclusive-mode max channels; use larger of format report vs probe
+			int32 ProbeChannels = GetDeviceMaxChannels(pDevice);
+			Info.NumChannels = FMath::Max(FormatChannels, ProbeChannels);
+		}
+
+		if (!Info.bIsValid)
+		{
+			int32 MixChannels = 2;
+			IAudioClient* pAudioClient = nullptr;
+			hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&pAudioClient);
+			if (SUCCEEDED(hr) && pAudioClient)
+			{
+				WAVEFORMATEX* pwfx = nullptr;
+				hr = pAudioClient->GetMixFormat(&pwfx);
+				if (SUCCEEDED(hr) && pwfx)
+				{
+					MixChannels = pwfx->nChannels;
+					Info.SampleRate = pwfx->nSamplesPerSec;
+					Info.BytesPerSample = pwfx->wBitsPerSample / 8;
+					if (pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
+					{
+						WAVEFORMATEXTENSIBLE* pwfex = (WAVEFORMATEXTENSIBLE*)pwfx;
+						Info.BytesPerSample = pwfex->Format.wBitsPerSample / 8;
+					}
+					Info.bIsValid = true;
+					CoTaskMemFree(pwfx);
+				}
+				pAudioClient->Release();
+			}
+			int32 ProbeCh = GetDeviceMaxChannels(pDevice);
+			Info.NumChannels = FMath::Max(MixChannels, ProbeCh);
 		}
 
 		pDevice->Release();
@@ -120,6 +253,7 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 
 	pDevices->Release();
 	pEnumerator->Release();
+
 #elif PLATFORM_MAC
 	AudioObjectPropertyAddress Addr = {
 		kAudioHardwarePropertyDevices,
@@ -264,22 +398,51 @@ FWasapiDeviceInfo FWasapiDeviceEnumerator::GetDefaultOutputDevice()
 			Result.FriendlyName = varName.pwszVal;
 		}
 		PropVariantClear(&varName);
-		pProps->Release();
-	}
 
-	IAudioClient* pAudioClient = nullptr;
-	if (SUCCEEDED(pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&pAudioClient)) && pAudioClient)
-	{
-		WAVEFORMATEX* pwfx = nullptr;
-		if (SUCCEEDED(pAudioClient->GetMixFormat(&pwfx)) && pwfx)
+		// PKEY_AudioEngine_DeviceFormat - may report stereo; probe IsFormatSupported for actual max
+		int32 FormatChannels = 2;
+		PROPVARIANT varFormat;
+		PropVariantInit(&varFormat);
+		if (SUCCEEDED(pProps->GetValue(PKEY_AudioEngine_DeviceFormat_Local, &varFormat)) &&
+		    varFormat.vt == VT_BLOB && varFormat.blob.pBlobData && varFormat.blob.cbSize >= sizeof(WAVEFORMATEX))
 		{
-			Result.NumChannels = pwfx->nChannels;
+			WAVEFORMATEX* pwfx = (WAVEFORMATEX*)varFormat.blob.pBlobData;
+			FormatChannels = pwfx->nChannels;
 			Result.SampleRate = pwfx->nSamplesPerSec;
 			Result.BytesPerSample = pwfx->wBitsPerSample / 8;
+			if (varFormat.blob.cbSize >= sizeof(WAVEFORMATEXTENSIBLE) && pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
+			{
+				WAVEFORMATEXTENSIBLE* pwfex = (WAVEFORMATEXTENSIBLE*)pwfx;
+				Result.BytesPerSample = pwfex->Format.wBitsPerSample / 8;
+			}
 			Result.bIsValid = true;
-			CoTaskMemFree(pwfx);
 		}
-		pAudioClient->Release();
+		PropVariantClear(&varFormat);
+		pProps->Release();
+
+		int32 ProbeCh = GetDeviceMaxChannels(pDevice);
+		Result.NumChannels = FMath::Max(FormatChannels, ProbeCh);
+	}
+
+	if (!Result.bIsValid)
+	{
+		int32 MixChannels = 2;
+		IAudioClient* pAudioClient = nullptr;
+		if (SUCCEEDED(pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&pAudioClient)) && pAudioClient)
+		{
+			WAVEFORMATEX* pwfx = nullptr;
+			if (SUCCEEDED(pAudioClient->GetMixFormat(&pwfx)) && pwfx)
+			{
+				MixChannels = pwfx->nChannels;
+				Result.SampleRate = pwfx->nSamplesPerSec;
+				Result.BytesPerSample = pwfx->wBitsPerSample / 8;
+				Result.bIsValid = true;
+				CoTaskMemFree(pwfx);
+			}
+			pAudioClient->Release();
+		}
+		int32 ProbeCh = GetDeviceMaxChannels(pDevice);
+		Result.NumChannels = FMath::Max(MixChannels, ProbeCh);
 	}
 	pDevice->Release();
 #elif PLATFORM_MAC

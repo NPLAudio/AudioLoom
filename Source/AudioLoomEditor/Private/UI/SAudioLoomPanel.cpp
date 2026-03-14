@@ -231,6 +231,10 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 				+ SHorizontalBox::Slot().FillWidth(0.6f).Padding(4.f, 2.f)
 					[SNew(STextBlock).Text(LOCTEXT("ColChannel", "Ch")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
 				+ SHorizontalBox::Slot().FillWidth(0.4f).Padding(4.f, 2.f)
+					[SNew(STextBlock).Text(LOCTEXT("ColLL", "LL")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+				+ SHorizontalBox::Slot().FillWidth(0.35f).Padding(4.f, 2.f)
+					[SNew(STextBlock).Text(LOCTEXT("ColBuf", "Buf")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
+				+ SHorizontalBox::Slot().FillWidth(0.4f).Padding(4.f, 2.f)
 					[SNew(STextBlock).Text(LOCTEXT("ColLoop", "Loop")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
 				+ SHorizontalBox::Slot().FillWidth(0.5f).Padding(4.f, 2.f)
 					[SNew(STextBlock).Text(LOCTEXT("ColBegin", "Begin")).Font(FAppStyle::GetFontStyle("SmallFontBold")).ColorAndOpacity(FSlateColor::UseSubduedForeground())]
@@ -250,7 +254,6 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 					SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>)
 					.ListItemsSource(&ListViewItems)
 					.OnGenerateRow(this, &SAudioLoomPanel::GenerateComponentRow)
-					.ItemHeight(44.f)
 					.SelectionMode(ESelectionMode::None)
 				]
 			]
@@ -284,6 +287,7 @@ void SAudioLoomPanel::RebuildComponentList()
 {
 	ComponentList.Reset();
 	ListViewItems.Reset();
+	CachedDevices = FWasapiDeviceEnumerator::GetOutputDevices();
 
 	UWorld* World = GetCurrentWorld();
 	if (!World) return;
@@ -421,8 +425,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 {
 	UAudioLoomWasapiComponent* Comp = Item.IsValid() ? Item->Get() : nullptr;
 	TWeakObjectPtr<UAudioLoomWasapiComponent> WeakComp = Comp;
-
-	TArray<FWasapiDeviceInfo> Devices = FWasapiDeviceEnumerator::GetOutputDevices();
+	const TArray<FWasapiDeviceInfo>& Devices = CachedDevices;
 
 	return SNew(STableRow<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>, OwnerTable)
 		.Padding(FMargin(2.f, 2.f))
@@ -525,14 +528,17 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 				.ButtonContent()
 				[
 					SNew(STextBlock)
-				.Text_Lambda([WeakComp]()
-				{
-					if (!WeakComp.IsValid()) return LOCTEXT("DefaultDevice", "Default Output");
-					FString Id = WeakComp->DeviceId;
-					if (Id.IsEmpty()) return LOCTEXT("DefaultDevice", "Default Output");
-					FWasapiDeviceInfo Info = FWasapiDeviceEnumerator::GetDeviceById(Id);
-					return Info.bIsValid ? FText::FromString(Info.FriendlyName) : FText::FromString(Id);
-				})
+					.Text_Lambda([WeakComp, Devices]()
+					{
+						if (!WeakComp.IsValid()) return LOCTEXT("DefaultDevice", "Default Output");
+						FString Id = WeakComp->DeviceId;
+						if (Id.IsEmpty()) return LOCTEXT("DefaultDevice", "Default Output");
+						for (const FWasapiDeviceInfo& D : Devices)
+						{
+							if (D.DeviceId == Id) return FText::FromString(D.FriendlyName);
+						}
+						return FText::FromString(Id);
+					})
 					.Font(FAppStyle::GetFontStyle("SmallFont"))
 				]
 			]
@@ -587,44 +593,58 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 				]
 			]
 
-			// Low latency mode checkbox (Windows)
+			// Low latency mode checkbox (Windows only)
 			+ SHorizontalBox::Slot()
 			.FillWidth(0.4f)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
-				SNew(SCheckBox)
-				.IsChecked_Lambda([WeakComp]()
+				SNew(SBox)
+				.Visibility_Lambda([WeakComp]()
 				{
-					return WeakComp.IsValid() && WeakComp->bUseExclusiveMode ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+					return (WeakComp.IsValid() && PLATFORM_WINDOWS) ? EVisibility::Visible : EVisibility::Collapsed;
 				})
-				.OnCheckStateChanged_Lambda([WeakComp](ECheckBoxState NewState)
-				{
-					if (WeakComp.IsValid())
+				[
+					SNew(SCheckBox)
+					.IsChecked_Lambda([WeakComp]()
 					{
-						WeakComp->bUseExclusiveMode = (NewState == ECheckBoxState::Checked);
-						WeakComp->Modify();
-					}
-				})
-				.ToolTipText(LOCTEXT("LowLatencyTip", "Low latency mode (Windows)"))
+						return WeakComp.IsValid() && WeakComp->bUseExclusiveMode ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+					})
+					.OnCheckStateChanged_Lambda([WeakComp](ECheckBoxState NewState)
+					{
+						if (WeakComp.IsValid())
+						{
+							WeakComp->bUseExclusiveMode = (NewState == ECheckBoxState::Checked);
+							WeakComp->Modify();
+						}
+					})
+					.ToolTipText(LOCTEXT("LowLatencyTip", "Low latency mode (Windows)"))
+				]
 			]
 
-			// Buffer size (ms) for low latency mode
+			// Buffer size (ms) for low latency mode (Windows only)
 			+ SHorizontalBox::Slot()
 			.FillWidth(0.35f)
 			.VAlign(VAlign_Center)
 			.Padding(4.f, 2.f)
 			[
-				SNew(SSpinBox<int32>)
-				.MinValue(0)
-				.MaxValue(100)
-				.Value_Lambda([WeakComp]() { return WeakComp.IsValid() ? WeakComp->BufferSizeMs : 0; })
-				.OnValueChanged_Lambda([WeakComp](int32 Val)
+				SNew(SBox)
+				.Visibility_Lambda([WeakComp]()
 				{
-					if (WeakComp.IsValid()) { WeakComp->BufferSizeMs = FMath::Clamp(Val, 0, 100); WeakComp->Modify(); }
+					return (WeakComp.IsValid() && PLATFORM_WINDOWS) ? EVisibility::Visible : EVisibility::Collapsed;
 				})
-				.MinDesiredWidth(50.f)
-				.ToolTipText(LOCTEXT("BufferSizeTip", "Buffer ms (0=default), for low latency mode"))
+				[
+					SNew(SSpinBox<int32>)
+					.MinValue(0)
+					.MaxValue(100)
+					.Value_Lambda([WeakComp]() { return WeakComp.IsValid() ? WeakComp->BufferSizeMs : 0; })
+					.OnValueChanged_Lambda([WeakComp](int32 Val)
+					{
+						if (WeakComp.IsValid()) { WeakComp->BufferSizeMs = FMath::Clamp(Val, 0, 100); WeakComp->Modify(); }
+					})
+					.MinDesiredWidth(50.f)
+					.ToolTipText(LOCTEXT("BufferSizeTip", "Buffer ms (0=default), for low latency mode"))
+				]
 			]
 
 			// Loop checkbox

@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.0",
 	"FriendlyName": "AudioLoom",
-	"Description": "WASAPI routing workflow: route sound files to any Windows audio device and select output channels.",
+	"Description": "Route sound files to any audio device and select output channels. Windows (WASAPI), macOS (CoreAudio).",
 	"Category": "Audio",
 	"CreatedBy": "AudioLoom",
 	"CreatedByURL": "",
