@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release zip
+        run: |
+          mkdir -p release/AudioLoom
+          rsync -av \
+            --exclude='.git' \
+            --exclude='Binaries' \
+            --exclude='Intermediate' \
+            --exclude='Saved' \
+            --exclude='DerivedDataCache' \
+            --exclude='.vs' \
+            --exclude='*.suo' \
+            --exclude='*.user' \
+            --exclude='*.sln' \
+            --exclude='*.xcworkspace' \
+            --exclude='.DS_Store' \
+            --exclude='Thumbs.db' \
+            --exclude='.github' \
+            --exclude='ThirdParty' \
+            . release/AudioLoom/
+          cd release
+          zip -r "AudioLoom-${{ github.ref_name }}.zip" AudioLoom
+          mv "AudioLoom-${{ github.ref_name }}.zip" ..
+          echo "ZIP_NAME=AudioLoom-${{ github.ref_name }}.zip" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AudioLoom-${{ github.ref_name }}.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

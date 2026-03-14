@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/Icon128.png" width="256" height="256" alt="AudioLoom" />
+  <img src="Resources/EditorStyles/Icon128.png" width="256" height="256" alt="AudioLoom" />
 </p>
 
 # AudioLoom
