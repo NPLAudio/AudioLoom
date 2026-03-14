@@ -4,26 +4,26 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "AudioLoomWasapiActor.generated.h"
+#include "AudioLoomActor.generated.h"
 
-class UAudioLoomWasapiComponent;
+class UAudioLoomComponent;
 
 /**
  * Convenience actor for audio routing (Windows/macOS).
  * Place in level, configure SoundWave + device + channel on the root component, then Play.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "Audio Loom"))
-class AUDIOLOOM_API AAudioLoomWasapiActor : public AActor
+class AUDIOLOOM_API AAudioLoomActor : public AActor
 {
 	GENERATED_BODY()
 
 public:
-	AAudioLoomWasapiActor();
+	AAudioLoomActor();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AudioLoom")
-	TObjectPtr<UAudioLoomWasapiComponent> WasapiComponent;
+	TObjectPtr<UAudioLoomComponent> AudioLoomComponent;
 
-	/** Default label for newly placed actors (avoids "AudioLoomWasapi" in editor) */
+	/** Default label for newly placed actors */
 	virtual FString GetDefaultActorLabel() const override;
 
 protected:

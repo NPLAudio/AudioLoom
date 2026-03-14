@@ -1,7 +1,7 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
 #include "UI/SAudioLoomPanel.h"
-#include "AudioLoomWasapiComponent.h"
+#include "AudioLoomComponent.h"
 #include "AudioLoomBlueprintLibrary.h"
 #include "AudioLoomOscSubsystem.h"
 #include "AudioLoomOscSettings.h"
@@ -276,7 +276,7 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 						+ SVerticalBox::Slot()
 						.FillHeight(1.f)
 						[
-							SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>)
+							SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>)
 							.ListItemsSource(&ListViewItems)
 							.OnGenerateRow(this, &SAudioLoomPanel::GenerateComponentRow)
 							.SelectionMode(ESelectionMode::None)
@@ -321,14 +321,14 @@ void SAudioLoomPanel::RebuildComponentList()
 
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		TArray<UAudioLoomWasapiComponent*> Comps;
+		TArray<UAudioLoomComponent*> Comps;
 		It->GetComponents(Comps);
-		for (UAudioLoomWasapiComponent* Comp : Comps)
+		for (UAudioLoomComponent* Comp : Comps)
 		{
 			if (IsValid(Comp))
 			{
 				ComponentList.Add(Comp);
-				ListViewItems.Add(MakeShared<TWeakObjectPtr<UAudioLoomWasapiComponent>>(Comp));
+				ListViewItems.Add(MakeShared<TWeakObjectPtr<UAudioLoomComponent>>(Comp));
 			}
 		}
 	}
@@ -347,9 +347,9 @@ bool SAudioLoomPanel::HasComponentListChanged() const
 	int32 Count = 0;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		TArray<UAudioLoomWasapiComponent*> Comps;
+		TArray<UAudioLoomComponent*> Comps;
 		It->GetComponents(Comps);
-		for (UAudioLoomWasapiComponent* Comp : Comps)
+		for (UAudioLoomComponent* Comp : Comps)
 		{
 			if (IsValid(Comp)) ++Count;
 		}
@@ -357,7 +357,7 @@ bool SAudioLoomPanel::HasComponentListChanged() const
 	if (Count != ComponentList.Num()) return true;
 
 	int32 ValidCount = 0;
-	for (const TWeakObjectPtr<UAudioLoomWasapiComponent>& W : ComponentList)
+	for (const TWeakObjectPtr<UAudioLoomComponent>& W : ComponentList)
 	{
 		if (W.IsValid()) ++ValidCount;
 	}
@@ -447,14 +447,14 @@ FReply SAudioLoomPanel::OnStartStopOscClicked()
 }
 
 TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
-	TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>> Item,
+	TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>> Item,
 	const TSharedRef<STableViewBase>& OwnerTable)
 {
-	UAudioLoomWasapiComponent* Comp = Item.IsValid() ? Item->Get() : nullptr;
-	TWeakObjectPtr<UAudioLoomWasapiComponent> WeakComp = Comp;
+	UAudioLoomComponent* Comp = Item.IsValid() ? Item->Get() : nullptr;
+	TWeakObjectPtr<UAudioLoomComponent> WeakComp = Comp;
 	const TArray<FWasapiDeviceInfo>& Devices = CachedDevices;
 
-	return SNew(STableRow<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>, OwnerTable)
+	return SNew(STableRow<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>, OwnerTable)
 		.Padding(FMargin(2.f, 2.f))
 		[
 			SNew(SHorizontalBox)
@@ -472,8 +472,8 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 						{
 							if (!Owner) return FText::FromString(TEXT("—"));
 							FString Label = Owner->GetActorLabel();
-							// Display "Audio Loom" instead of "AudioLoomWasapi" (class-derived default)
-							Label.ReplaceInline(TEXT("AudioLoomWasapi"), TEXT("Audio Loom"), ESearchCase::IgnoreCase);
+							// Display "Audio Loom" instead of class name in list
+							Label.ReplaceInline(TEXT("AudioLoomComponent"), TEXT("Audio Loom"), ESearchCase::IgnoreCase);
 							return FText::FromString(Label.IsEmpty() ? TEXT("—") : Label);
 						}
 						return LOCTEXT("Invalid", "—");
@@ -847,7 +847,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateComponentRow(
 		];
 }
 
-FReply SAudioLoomPanel::OnSelectInViewport(TWeakObjectPtr<UAudioLoomWasapiComponent> Component)
+FReply SAudioLoomPanel::OnSelectInViewport(TWeakObjectPtr<UAudioLoomComponent> Component)
 {
 	if (!GEditor || !Component.IsValid()) return FReply::Handled();
 	AActor* Owner = Component->GetOwner();

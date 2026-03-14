@@ -28,21 +28,30 @@ Unreal Engine plugin for routing audio to specific output devices and channels, 
 
 ## Installation
 
-### As a project plugin (recommended)
+### From a release (recommended)
 
-1. Copy the `AudioLoom` folder into your project’s `Plugins/` directory:
+1. Download the latest `AudioLoom-vX.X.zip` from [Releases](https://github.com/NPLAudio/AudioLoom/releases).
+2. Extract the zip — it contains a single `AudioLoom` folder.
+3. Copy the `AudioLoom` folder into your project’s `Plugins/` directory:
    ```
    YourProject/
    └── Plugins/
        └── AudioLoom/
    ```
 
-2. Restart Unreal Editor (or recompile if Live Coding is enabled).
-
-3. Enable the plugin if needed:
+4. Restart Unreal Editor (or recompile if Live Coding is enabled).
+5. Enable the plugin if needed:
    - **Edit → Plugins**
    - Search for “AudioLoom”
    - Ensure it is enabled
+
+### From source (git clone)
+
+For contributors or if you need the latest unreleased code:
+
+1. Clone the repo, or copy the `AudioLoom` folder from a clone, into your project's `Plugins/` directory.
+2. Restart Unreal Editor (or recompile if Live Coding is enabled).
+3. Enable the plugin if needed via **Edit → Plugins**.
 
 ### Dependencies
 
@@ -106,8 +115,8 @@ AudioLoom requires the **OSC** plugin (included with Unreal Engine). If it is di
 
 ### Component vs Actor
 
-- **Audio Loom** actor — Pre-made actor with a `UAudioLoomWasapiComponent`. Good for quick setup.
-- **AudioLoomWasapiComponent** — Can be added to any actor via **Add Component** → search “Audio Loom”.
+- **Audio Loom** actor — Pre-made actor with an `AudioLoomComponent`. Good for quick setup.
+- **AudioLoomComponent** — Can be added to any actor via **Add Component** → search “Audio Loom”.
 
 Both share the same features.
 
@@ -141,7 +150,7 @@ Both share the same features.
 
 Central panel for:
 
-- All `AudioLoomWasapiComponent` instances in the current level
+- All `AudioLoomComponent` instances in the current level
 - **Refresh** — Update the list
 - **Sound** — Assign sounds directly in the table (click, drag-drop, or “Use Selected” from the Content Browser)
 - **Device** — Dropdown of output devices
@@ -256,43 +265,50 @@ When a component starts or stops playing, AudioLoom sends:
 
 ## Walkthrough Guides
 
-### A. Basic routing to a speaker
+### A. Install the plugin (first-time setup)
 
-1. Place an **Audio Loom** actor.
-2. Assign a `USoundWave` in Details or the manager.
-3. Set **Device** to the target output in the manager.
-4. Set **Output Channel** to 0 (all) or a specific channel.
+1. Download `AudioLoom-vX.X.zip` from [Releases](https://github.com/NPLAudio/AudioLoom/releases) and extract it.
+2. Copy the extracted `AudioLoom` folder into your project's `Plugins/` directory.
+3. Restart Unreal Editor (or recompile if Live Coding is enabled).
+4. **Edit → Plugins** → search for "AudioLoom" → ensure it is enabled.
+
+### B. Basic routing to a speaker
+
+1. Place an **Audio Loom** actor: **Place Actors** → search "Audio Loom" → drag into the level.
+2. Assign a `USoundWave` in the actor's Details panel or in **Window → Audio Loom**.
+3. Open **Window → Audio Loom**. Set **Device** to the target output (or leave default).
+4. Set **Output Channel** to 0 (all channels) or 1, 2, 3… for a specific channel.
 5. Click **Play** in the manager or call `Play` from Blueprint.
 
-### B. OSC control from external software
+### C. OSC control from external software
 
-1. Open **Window → Audio Loom**.
-2. Set **Listen Port** (e.g. 9000) and click **Check Port**.
-3. Click **Start OSC**.
-4. From your external app, send to your machine’s IP and the listen port:
-   - `/audioloom/ActorName/0/play` — play
-   - `/audioloom/ActorName/0/stop` — stop
+1. Place an **Audio Loom** actor and assign a sound (see B).
+2. Open **Window → Audio Loom**. Set **Listen Port** (e.g. 9000) and click **Check Port**.
+3. Click **Start OSC** (the button turns green when running).
+4. From your external app (Max/MSP, TouchOSC, etc.), send to your machine’s IP and the listen port:
+   - `/audioloom/YourActorName/0/play` — start playback
+   - `/audioloom/YourActorName/0/stop` — stop playback
 
-### C. Multi-channel speaker map
+### D. Multi-channel speaker map
 
 1. Add one Audio Loom actor per speaker (or one actor with multiple components).
-2. Give each a unique **OSC Address** (e.g. `/show/L`, `/show/R`, `/show/C`).
-3. Route each component to the correct device and channel.
-4. Use OSC to trigger each speaker independently.
+2. Give each a unique **OSC Address** in the manager (e.g. `/show/L`, `/show/R`, `/show/C`).
+3. Route each component to the correct **Device** and **Output Channel**.
+4. Use OSC to trigger each speaker independently (e.g. `/show/L/play`, `/show/R/play`).
 
-### D. Monitoring in another app
+### E. Monitoring in another app
 
-1. In **Project Settings → Audio Loom > OSC**, set **Send IP** and **Send Port**.
+1. In **Project Settings → Audio Loom > OSC**, set **Send IP** and **Send Port** (where your monitoring app listens).
 2. In your external app (e.g. Max/MSP, Pure Data), open a UDP receiver on that port.
-3. Start OSC in the Audio Loom panel.
-4. When components play or stop, you’ll receive `/base/state` with 1 or 0.
+3. Open **Window → Audio Loom** and click **Start OSC**.
+4. When components play or stop, you’ll receive `/base/state` with 1.0 (playing) or 0.0 (stopped).
 
-### E. Blueprint-triggered playback
+### F. Blueprint-triggered playback
 
-1. Add `AudioLoomWasapiComponent` to an actor.
-2. Configure sound, device, and channel.
+1. Add **AudioLoomComponent** to an actor: **Add Component** → search "Audio Loom".
+2. Assign a sound, device, and channel in the Details panel.
 3. In Blueprint, call **Play** (e.g. from Event BeginPlay or a custom event).
-4. Use **Stop** and **Set Loop** as needed.
+4. Use **Stop** and **Set Loop** nodes as needed.
 
 ---
 

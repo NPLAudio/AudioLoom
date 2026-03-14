@@ -4,7 +4,7 @@
 #include "UI/SAudioLoomPanel.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
-#include "AudioLoomWasapiComponentDetails.h"
+#include "AudioLoomComponentDetails.h"
 #include "LevelEditor.h"
 #include "WorkspaceMenuStructure.h"
 #include "WorkspaceMenuStructureModule.h"
@@ -19,8 +19,8 @@ void FAudioLoomEditorModule::StartupModule()
 {
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	PropertyModule.RegisterCustomClassLayout(
-		"AudioLoomWasapiComponent",
-		FOnGetDetailCustomizationInstance::CreateStatic(&FAudioLoomWasapiComponentDetails::MakeInstance));
+		"AudioLoomComponent",
+		FOnGetDetailCustomizationInstance::CreateStatic(&FAudioLoomComponentDetails::MakeInstance));
 	PropertyModule.NotifyCustomizationModuleChanged();
 
 	RegisterTab();
@@ -31,7 +31,7 @@ void FAudioLoomEditorModule::ShutdownModule()
 	if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
-		PropertyModule.UnregisterCustomClassLayout("AudioLoomWasapiComponent");
+		PropertyModule.UnregisterCustomClassLayout("AudioLoomComponent");
 	}
 
 	if (FGlobalTabmanager::Get()->HasTabSpawner(AudioLoomTabName))

@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "IDetailCustomization.h"
 
-class FAudioLoomWasapiComponentDetails : public IDetailCustomization
+class FAudioLoomComponentDetails : public IDetailCustomization
 {
 public:
 	static TSharedRef<IDetailCustomization> MakeInstance();

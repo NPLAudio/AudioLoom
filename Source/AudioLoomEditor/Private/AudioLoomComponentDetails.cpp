@@ -1,7 +1,7 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
-#include "AudioLoomWasapiComponentDetails.h"
-#include "AudioLoomWasapiComponent.h"
+#include "AudioLoomComponentDetails.h"
+#include "AudioLoomComponent.h"
 #include "AudioLoomBlueprintLibrary.h"
 #include "WasapiDeviceEnumerator.h"
 #include "WasapiDeviceInfo.h"
@@ -16,14 +16,14 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Sound/SoundWave.h"
 
-#define LOCTEXT_NAMESPACE "AudioLoomWasapiComponentDetails"
+#define LOCTEXT_NAMESPACE "AudioLoomComponentDetails"
 
-TSharedRef<IDetailCustomization> FAudioLoomWasapiComponentDetails::MakeInstance()
+TSharedRef<IDetailCustomization> FAudioLoomComponentDetails::MakeInstance()
 {
-	return MakeShareable(new FAudioLoomWasapiComponentDetails());
+	return MakeShareable(new FAudioLoomComponentDetails());
 }
 
-void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
+void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 {
 	TArray<TWeakObjectPtr<UObject>> Objects;
 	DetailBuilder.GetObjectsBeingCustomized(Objects);
@@ -32,12 +32,12 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 		return;
 	}
 
-	UAudioLoomWasapiComponent* Component = nullptr;
+	UAudioLoomComponent* Component = nullptr;
 	for (TWeakObjectPtr<UObject>& Obj : Objects)
 	{
 		if (Obj.IsValid())
 		{
-			Component = Cast<UAudioLoomWasapiComponent>(Obj.Get());
+			Component = Cast<UAudioLoomComponent>(Obj.Get());
 			break;
 		}
 	}
@@ -46,18 +46,18 @@ void FAudioLoomWasapiComponentDetails::CustomizeDetails(IDetailLayoutBuilder& De
 		return;
 	}
 
-	TSharedPtr<IPropertyHandle> DeviceIdHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, DeviceId));
-	TSharedPtr<IPropertyHandle> OutputChannelHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OutputChannel));
-	TSharedPtr<IPropertyHandle> ExclusiveHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, bUseExclusiveMode));
-	TSharedPtr<IPropertyHandle> BufferSizeMsHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, BufferSizeMs));
-	TSharedPtr<IPropertyHandle> OscAddressHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OscAddress));
+	TSharedPtr<IPropertyHandle> DeviceIdHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, DeviceId));
+	TSharedPtr<IPropertyHandle> OutputChannelHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, OutputChannel));
+	TSharedPtr<IPropertyHandle> ExclusiveHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, bUseExclusiveMode));
+	TSharedPtr<IPropertyHandle> BufferSizeMsHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, BufferSizeMs));
+	TSharedPtr<IPropertyHandle> OscAddressHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, OscAddress));
 
 	IDetailCategoryBuilder& RoutingCategory = DetailBuilder.EditCategory("AudioLoom|Routing", LOCTEXT("RoutingCategory", "AudioLoom"));
 	IDetailCategoryBuilder& PlaybackCategory = DetailBuilder.EditCategory("AudioLoom|Playback", LOCTEXT("PlaybackCategory", "Playback"));
 	IDetailCategoryBuilder& OscCategory = DetailBuilder.EditCategory("AudioLoom|OSC", LOCTEXT("OscCategory", "OSC"));
 
 	// Sound Wave - use default property (supports drag-drop from Content Browser)
-	TSharedPtr<IPropertyHandle> SoundWaveHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, SoundWave));
+	TSharedPtr<IPropertyHandle> SoundWaveHandle = DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, SoundWave));
 	RoutingCategory.AddProperty(SoundWaveHandle);
 
 	// Device combo - use PropertyHandle so changes propagate and UI refreshes

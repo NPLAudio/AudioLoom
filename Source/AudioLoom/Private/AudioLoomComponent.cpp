@@ -1,6 +1,6 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
-#include "AudioLoomWasapiComponent.h"
+#include "AudioLoomComponent.h"
 #include "AudioLoomPcmLoader.h"
 #include "AudioLoomBlueprintLibrary.h"
 #include "AudioLoomOscSubsystem.h"
@@ -8,13 +8,13 @@
 #include "Sound/SoundWave.h"
 #include "UObject/UnrealType.h"
 
-UAudioLoomWasapiComponent::UAudioLoomWasapiComponent()
+UAudioLoomComponent::UAudioLoomComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-	WasapiBackend = new FWasapiAudioBackend();
+	AudioBackend = new FWasapiAudioBackend();
 }
 
-void UAudioLoomWasapiComponent::BeginPlay()
+void UAudioLoomComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	if (bPlayOnBeginPlay)
@@ -24,14 +24,14 @@ void UAudioLoomWasapiComponent::BeginPlay()
 }
 
 #if WITH_EDITOR
-void UAudioLoomWasapiComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+void UAudioLoomComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	const FName PropName = PropertyChangedEvent.GetMemberPropertyName();
-	if ((PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, OutputChannel) ||
-	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, DeviceId) ||
-	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, bUseExclusiveMode) ||
-	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomWasapiComponent, BufferSizeMs)) &&
+	if ((PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, OutputChannel) ||
+	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, DeviceId) ||
+	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, bUseExclusiveMode) ||
+	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, BufferSizeMs)) &&
 	    IsPlaying() && SoundWave)
 	{
 		Stop();
@@ -40,25 +40,25 @@ void UAudioLoomWasapiComponent::PostEditChangeProperty(FPropertyChangedEvent& Pr
 }
 #endif
 
-void UAudioLoomWasapiComponent::BeginDestroy()
+void UAudioLoomComponent::BeginDestroy()
 {
 	Stop();
-	if (WasapiBackend)
+	if (AudioBackend)
 	{
-		delete WasapiBackend;
-		WasapiBackend = nullptr;
+		delete AudioBackend;
+		AudioBackend = nullptr;
 	}
 	Super::BeginDestroy();
 }
 
-void UAudioLoomWasapiComponent::Play()
+void UAudioLoomComponent::Play()
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	if (!SoundWave)
 	{
 		return;
 	}
-	if (!WasapiBackend) return;
+	if (!AudioBackend) return;
 
 	FAudioLoomPcmResult Result = FAudioLoomPcmLoader::LoadFromSoundWave(SoundWave);
 	if (!Result.bSuccess)
@@ -93,7 +93,7 @@ void UAudioLoomWasapiComponent::Play()
 		PCM = MoveTemp(Resampled);
 	}
 
-	WasapiBackend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop, bUseExclusiveMode, BufferSizeMs);
+	AudioBackend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop, bUseExclusiveMode, BufferSizeMs);
 
 	if (UWorld* W = GetWorld())
 	{
@@ -105,12 +105,12 @@ void UAudioLoomWasapiComponent::Play()
 #endif
 }
 
-void UAudioLoomWasapiComponent::Stop()
+void UAudioLoomComponent::Stop()
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
-	if (WasapiBackend)
+	if (AudioBackend)
 	{
-		WasapiBackend->Stop();
+		AudioBackend->Stop();
 	}
 	if (UWorld* W = GetWorld())
 	{
@@ -122,21 +122,21 @@ void UAudioLoomWasapiComponent::Stop()
 #endif
 }
 
-bool UAudioLoomWasapiComponent::IsPlaying() const
+bool UAudioLoomComponent::IsPlaying() const
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
-	return WasapiBackend && WasapiBackend->IsPlaying();
+	return AudioBackend && AudioBackend->IsPlaying();
 #else
 	return false;
 #endif
 }
 
-void UAudioLoomWasapiComponent::SetLoop(bool bInLoop)
+void UAudioLoomComponent::SetLoop(bool bInLoop)
 {
 	bLoop = bInLoop;
 }
 
-FString UAudioLoomWasapiComponent::GetOscAddress() const
+FString UAudioLoomComponent::GetOscAddress() const
 {
 	if (!OscAddress.IsEmpty())
 	{
@@ -145,13 +145,13 @@ FString UAudioLoomWasapiComponent::GetOscAddress() const
 	}
 	AActor* Owner = GetOwner();
 	if (!Owner) return TEXT("/audioloom/unnamed");
-	TArray<UAudioLoomWasapiComponent*> Comps;
+	TArray<UAudioLoomComponent*> Comps;
 	Owner->GetComponents(Comps);
 	int32 Idx = Comps.IndexOfByKey(this);
 	return FString::Printf(TEXT("/audioloom/%s/%d"), *Owner->GetName(), FMath::Max(0, Idx));
 }
 
-bool UAudioLoomWasapiComponent::SetOscAddress(const FString& InAddress)
+bool UAudioLoomComponent::SetOscAddress(const FString& InAddress)
 {
 	if (InAddress.IsEmpty())
 	{
@@ -163,4 +163,3 @@ bool UAudioLoomWasapiComponent::SetOscAddress(const FString& InAddress)
 	OscAddress = Normalized;
 	return true;
 }
-

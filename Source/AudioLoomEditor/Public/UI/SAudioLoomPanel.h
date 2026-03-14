@@ -8,7 +8,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
 
-class UAudioLoomWasapiComponent;
+class UAudioLoomComponent;
 
 /**
  * Audio Loom management window.
@@ -29,16 +29,16 @@ private:
 	EActiveTimerReturnType OnRefreshTimer(double InCurrentTime, float InDeltaTime);
 	FReply OnRefreshClicked();
 
-	TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>> ComponentList;
-	TArray<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>> ListViewItems;
-	TSharedPtr<SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>>>> ListView;
+	TArray<TWeakObjectPtr<UAudioLoomComponent>> ComponentList;
+	TArray<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>> ListViewItems;
+	TSharedPtr<SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>> ListView;
 	TArray<FWasapiDeviceInfo> CachedDevices;
 
 	TSharedRef<ITableRow> GenerateComponentRow(
-		TSharedPtr<TWeakObjectPtr<UAudioLoomWasapiComponent>> Item,
+		TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>> Item,
 		const TSharedRef<STableViewBase>& OwnerTable);
 
-	FReply OnSelectInViewport(TWeakObjectPtr<UAudioLoomWasapiComponent> Component);
+	FReply OnSelectInViewport(TWeakObjectPtr<UAudioLoomComponent> Component);
 	FReply OnCheckPortClicked();
 	FReply OnStartStopOscClicked();
 

@@ -6,7 +6,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "AudioLoomOscSubsystem.generated.h"
 
-class UAudioLoomWasapiComponent;
+class UAudioLoomComponent;
 class UOSCServer;
 class UOSCClient;
 struct FOSCMessage;
@@ -46,7 +46,7 @@ public:
 	void RebuildComponentRegistry();
 
 	/** Send a play/stop state message for a component. Address format: BaseAddress/state, value 1=playing 0=stopped. */
-	void SendStateUpdate(UAudioLoomWasapiComponent* Component, bool bPlaying);
+	void SendStateUpdate(UAudioLoomComponent* Component, bool bPlaying);
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
@@ -60,9 +60,9 @@ private:
 	UPROPERTY()
 	UOSCClient* OSCClient;
 
-	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>>> PlayTagToComponents;
-	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>>> StopTagToComponents;
-	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>>> LoopTagToComponents;
+	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomComponent>>> PlayTagToComponents;
+	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomComponent>>> StopTagToComponents;
+	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomComponent>>> LoopTagToComponents;
 
 	FTimerHandle RebuildRegistryTimer;
 };

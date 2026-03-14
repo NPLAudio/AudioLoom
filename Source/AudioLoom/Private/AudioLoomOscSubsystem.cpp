@@ -1,7 +1,7 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
 #include "AudioLoomOscSubsystem.h"
-#include "AudioLoomWasapiComponent.h"
+#include "AudioLoomComponent.h"
 #include "AudioLoomOscSettings.h"
 #include "OSCManager.h"
 #include "OSCServer.h"
@@ -69,9 +69,9 @@ void UAudioLoomOscSubsystem::RebuildComponentRegistry()
 
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		TArray<UAudioLoomWasapiComponent*> Comps;
+		TArray<UAudioLoomComponent*> Comps;
 		It->GetComponents(Comps);
-		for (UAudioLoomWasapiComponent* Comp : Comps)
+		for (UAudioLoomComponent* Comp : Comps)
 		{
 			if (!IsValid(Comp)) continue;
 
@@ -165,35 +165,35 @@ void UAudioLoomOscSubsystem::HandleOSCMessage(const FOSCMessage& Message, const 
 		if (Ints.Num() > 0) TriggerValue = static_cast<float>(Ints[0]);
 	}
 
-	if (TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>>* PlayComps = PlayTagToComponents.Find(Normalized))
+	if (TArray<TWeakObjectPtr<UAudioLoomComponent>>* PlayComps = PlayTagToComponents.Find(Normalized))
 	{
 		const bool bTriggerPlay = (TriggerValue > 0.5f || Floats.Num() == 0);
-		for (TWeakObjectPtr<UAudioLoomWasapiComponent>& W : *PlayComps)
+		for (TWeakObjectPtr<UAudioLoomComponent>& W : *PlayComps)
 		{
-			if (UAudioLoomWasapiComponent* C = W.Get())
+			if (UAudioLoomComponent* C = W.Get())
 			{
 				if (bTriggerPlay) C->Play();
 			}
 		}
 	}
 
-	if (TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>>* StopComps = StopTagToComponents.Find(Normalized))
+	if (TArray<TWeakObjectPtr<UAudioLoomComponent>>* StopComps = StopTagToComponents.Find(Normalized))
 	{
-		for (TWeakObjectPtr<UAudioLoomWasapiComponent>& W : *StopComps)
+		for (TWeakObjectPtr<UAudioLoomComponent>& W : *StopComps)
 		{
-			if (UAudioLoomWasapiComponent* C = W.Get())
+			if (UAudioLoomComponent* C = W.Get())
 			{
 				C->Stop();
 			}
 		}
 	}
 
-	if (TArray<TWeakObjectPtr<UAudioLoomWasapiComponent>>* LoopComps = LoopTagToComponents.Find(Normalized))
+	if (TArray<TWeakObjectPtr<UAudioLoomComponent>>* LoopComps = LoopTagToComponents.Find(Normalized))
 	{
 		const bool bEnableLoop = (TriggerValue > 0.5f);
-		for (TWeakObjectPtr<UAudioLoomWasapiComponent>& W : *LoopComps)
+		for (TWeakObjectPtr<UAudioLoomComponent>& W : *LoopComps)
 		{
-			if (UAudioLoomWasapiComponent* C = W.Get())
+			if (UAudioLoomComponent* C = W.Get())
 			{
 				C->SetLoop(bEnableLoop);
 			}
@@ -201,7 +201,7 @@ void UAudioLoomOscSubsystem::HandleOSCMessage(const FOSCMessage& Message, const 
 	}
 }
 
-void UAudioLoomOscSubsystem::SendStateUpdate(UAudioLoomWasapiComponent* Component, bool bPlaying)
+void UAudioLoomOscSubsystem::SendStateUpdate(UAudioLoomComponent* Component, bool bPlaying)
 {
 	if (!OSCClient || !OSCClient->IsActive() || !IsValid(Component)) return;
 

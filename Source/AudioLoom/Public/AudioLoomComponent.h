@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "AudioLoomWasapiComponent.generated.h"
+#include "AudioLoomComponent.generated.h"
 
 class USoundWave;
 
@@ -13,12 +13,12 @@ class USoundWave;
  * Attach to any Actor: drop a sound, select device and channel, play.
  */
 UCLASS(ClassGroup = (Audio), meta = (BlueprintSpawnableComponent, DisplayName = "Audio Loom"))
-class AUDIOLOOM_API UAudioLoomWasapiComponent : public UActorComponent
+class AUDIOLOOM_API UAudioLoomComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	UAudioLoomWasapiComponent();
+	UAudioLoomComponent();
 
 	/** Sound to play. Drag from Content Browser. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Routing")
@@ -115,5 +115,5 @@ protected:
 #endif
 
 private:
-	class FWasapiAudioBackend* WasapiBackend = nullptr;
+	class FWasapiAudioBackend* AudioBackend = nullptr;
 };
