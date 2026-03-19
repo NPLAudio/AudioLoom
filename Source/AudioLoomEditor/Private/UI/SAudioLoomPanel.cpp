@@ -222,10 +222,16 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot()
 			.FillHeight(1.f)
 			[
-				SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>)
-				.ListItemsSource(&ListViewItems)
-				.OnGenerateRow(this, &SAudioLoomPanel::GenerateRow)
-				.SelectionMode(ESelectionMode::None)
+				SNew(SScrollBox)
+				.Orientation(Orient_Vertical)
+				+ SScrollBox::Slot()
+				[
+					SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>)
+					.ListItemsSource(&ListViewItems)
+					.OnGenerateRow(this, &SAudioLoomPanel::GenerateRow)
+					.SelectionMode(ESelectionMode::None)
+					.ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
+				]
 			]
 
 			+ SVerticalBox::Slot()

@@ -10,16 +10,66 @@
 
 UAudioLoomComponent::UAudioLoomComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;  // Used when bAutoReplay is on
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 	AudioBackend = new FWasapiAudioBackend();
+}
+
+void UAudioLoomComponent::UpdateTickEnabled()
+{
+	SetComponentTickEnabled(bAutoReplay && !bLoop && SoundWave != nullptr);
+	if (!bAutoReplay)
+	{
+		ReplayCountdown = 0.0f;
+	}
 }
 
 void UAudioLoomComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	UpdateTickEnabled();
+	bWasPlaying = false;
 	if (bPlayOnBeginPlay)
 	{
 		Play();
+	}
+}
+
+void UAudioLoomComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ReplayCountdown = 0.0f;
+	bWasPlaying = false;
+	Super::EndPlay(EndPlayReason);
+}
+
+void UAudioLoomComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	if (!bAutoReplay || bLoop || !SoundWave) return;
+
+	const bool bPlaying = IsPlaying();
+	if (bWasPlaying && !bPlaying)
+	{
+		// Playback ended — start countdown
+		if (bRandomReplayDelay)
+		{
+			ReplayCountdown = FMath::RandRange(FMath::Max(0.0f, ReplayDelayMin), FMath::Max(ReplayDelayMin, ReplayDelayMax));
+		}
+		else
+		{
+			ReplayCountdown = FMath::Max(0.0f, ReplayDelaySeconds);
+		}
+	}
+	bWasPlaying = bPlaying;
+
+	if (ReplayCountdown > 0.0f)
+	{
+		ReplayCountdown -= DeltaTime;
+		if (ReplayCountdown <= 0.0f)
+		{
+			ReplayCountdown = 0.0f;
+			Play();
+		}
 	}
 }
 
@@ -36,6 +86,11 @@ void UAudioLoomComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
 	{
 		Stop();
 		Play();
+	}
+	if (PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, bAutoReplay) ||
+	    PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, bLoop))
+	{
+		UpdateTickEnabled();
 	}
 }
 #endif

@@ -287,6 +287,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 								{
 									WeakComp->bLoop = (NewState == ECheckBoxState::Checked);
 									WeakComp->Modify();
+									WeakComp->UpdateTickEnabled();
 								}
 							})
 							.ToolTipText(LOCTEXT("LoopTip", "Loop playback"))
@@ -354,6 +355,123 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 							.ToolTipText(LOCTEXT("BufferSizeTip", "Buffer ms (0=default), for low latency mode"))
 						]
 #endif
+					]
+
+					// Auto Replay options
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.f, 0.f, 0.f, 4.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 8.f, 0.f)
+						[
+							SNew(SCheckBox)
+							.IsChecked_Lambda([WeakComp]()
+							{
+								return WeakComp.IsValid() && WeakComp->bAutoReplay ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+							})
+							.OnCheckStateChanged_Lambda([WeakComp](ECheckBoxState NewState)
+							{
+								if (WeakComp.IsValid())
+								{
+									WeakComp->bAutoReplay = (NewState == ECheckBoxState::Checked);
+									WeakComp->Modify();
+									WeakComp->UpdateTickEnabled();
+								}
+							})
+							.ToolTipText(LOCTEXT("AutoReplayTip", "Automatically replay after sound ends. Delay is from end to next play."))
+							[
+								SNew(STextBlock).Text(LOCTEXT("AutoReplay", "Auto Replay")).Font(FAppStyle::GetFontStyle("SmallFont"))
+							]
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 8.f, 0.f)
+						[
+							SNew(SCheckBox)
+							.IsChecked_Lambda([WeakComp]()
+							{
+								return WeakComp.IsValid() && WeakComp->bRandomReplayDelay ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+							})
+							.OnCheckStateChanged_Lambda([WeakComp](ECheckBoxState NewState)
+							{
+								if (WeakComp.IsValid())
+								{
+									WeakComp->bRandomReplayDelay = (NewState == ECheckBoxState::Checked);
+									WeakComp->Modify();
+								}
+							})
+							.ToolTipText(LOCTEXT("RandomDelayTip", "Random delay between Min and Max seconds. When off, uses fixed delay."))
+							[
+								SNew(STextBlock).Text(LOCTEXT("RandomDelay", "Random")).Font(FAppStyle::GetFontStyle("SmallFont"))
+							]
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 4.f, 0.f)
+						[
+							SNew(STextBlock).Text(LOCTEXT("DelaySec", "Delay (s)")).Font(FAppStyle::GetFontStyle("SmallFont"))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 8.f, 0.f)
+						[
+							SNew(SSpinBox<float>)
+							.MinValue(0.0f).MaxValue(3600.0f)
+							.MinDesiredWidth(55.f)
+							.Value_Lambda([WeakComp]() { return WeakComp.IsValid() ? WeakComp->ReplayDelaySeconds : 1.0f; })
+							.OnValueChanged_Lambda([WeakComp](float Val)
+							{
+								if (WeakComp.IsValid()) { WeakComp->ReplayDelaySeconds = FMath::Max(0.0f, Val); WeakComp->Modify(); }
+							})
+							.Visibility_Lambda([WeakComp]() { return (WeakComp.IsValid() && WeakComp->bAutoReplay && !WeakComp->bRandomReplayDelay) ? EVisibility::Visible : EVisibility::Collapsed; })
+							.ToolTipText(LOCTEXT("FixedDelayTip", "Fixed delay in seconds from sound end to next play"))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 4.f, 0.f)
+						[
+							SNew(STextBlock).Text(LOCTEXT("MinSec", "Min")).Font(FAppStyle::GetFontStyle("SmallFont"))
+								.Visibility_Lambda([WeakComp]() { return (WeakComp.IsValid() && WeakComp->bAutoReplay && WeakComp->bRandomReplayDelay) ? EVisibility::Visible : EVisibility::Collapsed; })
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 8.f, 0.f)
+						[
+							SNew(SSpinBox<float>)
+							.MinValue(0.0f).MaxValue(3600.0f)
+							.MinDesiredWidth(50.f)
+							.Value_Lambda([WeakComp]() { return WeakComp.IsValid() ? WeakComp->ReplayDelayMin : 0.5f; })
+							.OnValueChanged_Lambda([WeakComp](float Val)
+							{
+								if (WeakComp.IsValid()) { WeakComp->ReplayDelayMin = FMath::Max(0.0f, Val); WeakComp->Modify(); }
+							})
+							.Visibility_Lambda([WeakComp]() { return (WeakComp.IsValid() && WeakComp->bAutoReplay && WeakComp->bRandomReplayDelay) ? EVisibility::Visible : EVisibility::Collapsed; })
+							.ToolTipText(LOCTEXT("MinDelayTip", "Minimum random delay in seconds"))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 4.f, 0.f)
+						[
+							SNew(STextBlock).Text(LOCTEXT("MaxSec", "Max")).Font(FAppStyle::GetFontStyle("SmallFont"))
+								.Visibility_Lambda([WeakComp]() { return (WeakComp.IsValid() && WeakComp->bAutoReplay && WeakComp->bRandomReplayDelay) ? EVisibility::Visible : EVisibility::Collapsed; })
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SSpinBox<float>)
+							.MinValue(0.0f).MaxValue(3600.0f)
+							.MinDesiredWidth(50.f)
+							.Value_Lambda([WeakComp]() { return WeakComp.IsValid() ? WeakComp->ReplayDelayMax : 3.0f; })
+							.OnValueChanged_Lambda([WeakComp](float Val)
+							{
+								if (WeakComp.IsValid()) { WeakComp->ReplayDelayMax = FMath::Max(0.0f, Val); WeakComp->Modify(); }
+							})
+							.Visibility_Lambda([WeakComp]() { return (WeakComp.IsValid() && WeakComp->bAutoReplay && WeakComp->bRandomReplayDelay) ? EVisibility::Visible : EVisibility::Collapsed; })
+							.ToolTipText(LOCTEXT("MaxDelayTip", "Maximum random delay in seconds"))
+						]
 					]
 
 					// OSC address

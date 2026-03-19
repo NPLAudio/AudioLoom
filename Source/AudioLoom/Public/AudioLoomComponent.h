@@ -60,6 +60,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback")
 	bool bLoop = false;
 
+	/** When enabled, automatically replay after playback ends. Delay is from sound end to next play. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback")
+	bool bAutoReplay = false;
+
+	/** Use random delay between replays. When false, uses fixed ReplayDelaySeconds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback", meta = (EditCondition = "bAutoReplay"))
+	bool bRandomReplayDelay = false;
+
+	/** Fixed delay in seconds from sound end to next play. Used when bRandomReplayDelay is false. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback", meta = (EditCondition = "bAutoReplay", ClampMin = "0.0", UIMin = "0.0"))
+	float ReplayDelaySeconds = 1.0f;
+
+	/** Minimum delay in seconds (random mode). Random delay is between ReplayDelayMin and ReplayDelayMax. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback", meta = (EditCondition = "bAutoReplay && bRandomReplayDelay", ClampMin = "0.0", UIMin = "0.0"))
+	float ReplayDelayMin = 0.5f;
+
+	/** Maximum delay in seconds (random mode). Random delay is between ReplayDelayMin and ReplayDelayMax. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|Playback", meta = (EditCondition = "bAutoReplay && bRandomReplayDelay", ClampMin = "0.0", UIMin = "0.0"))
+	float ReplayDelayMax = 3.0f;
+
 	/**
 	 * Base OSC address for this component (e.g. /audioloom/1).
 	 * Empty = use default derived from owner and component index.
@@ -107,8 +127,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AudioLoom|Routing")
 	void SetOutputChannel(int32 Channel) { OutputChannel = FMath::Max(0, Channel); }
 
+	/** Called when bAutoReplay or bLoop changes (e.g. from UI). Updates tick state. */
+	UFUNCTION(BlueprintCallable, Category = "AudioLoom|Playback")
+	void UpdateTickEnabled();
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void BeginDestroy() override;
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -116,4 +142,6 @@ protected:
 
 private:
 	class FWasapiAudioBackend* AudioBackend = nullptr;
+	bool bWasPlaying = false;
+	float ReplayCountdown = 0.0f;
 };
