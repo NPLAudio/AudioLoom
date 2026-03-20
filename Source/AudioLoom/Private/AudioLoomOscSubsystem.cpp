@@ -1,5 +1,12 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomOscSubsystem.cpp
+ * @brief OSC message handling: float/int args → play/stop/loop; `SendStateUpdate` sends float to Send IP:Port.
+ *
+ * `IsPortAvailable` binds a UDP socket briefly to detect collisions before `CreateOSCServer`.
+ */
+
 #include "AudioLoomOscSubsystem.h"
 #include "AudioLoomComponent.h"
 #include "AudioLoomOscSettings.h"
@@ -20,7 +27,7 @@ static FString NormalizeOscAddress(const FString& Addr)
 	FString S = Addr.TrimStartAndEnd();
 	if (!S.StartsWith(TEXT("/")))
 	{
-		S = TEXT("/") + S;
+		S = TEXT("/") + S; // OSC 1.0 paths always start with /
 	}
 	return S;
 }
@@ -37,10 +44,10 @@ bool UAudioLoomOscSubsystem::IsPortAvailable(int32 Port)
 
 	TSharedRef<FInternetAddr> Addr = SocketSubsystem->CreateInternetAddr();
 	bool bValid = false;
-	Addr->SetIp(TEXT("0.0.0.0"), bValid);
+	Addr->SetIp(TEXT("0.0.0.0"), bValid); // bind all interfaces — same as server will use
 	Addr->SetPort(static_cast<uint16>(Port));
 
-	bool bBound = TestSocket->Bind(*Addr);
+	bool bBound = TestSocket->Bind(*Addr); // if this fails, something else already owns the UDP port
 	TestSocket->Close();
 	ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(TestSocket);
 
@@ -50,11 +57,12 @@ bool UAudioLoomOscSubsystem::IsPortAvailable(int32 Port)
 void UAudioLoomOscSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	// Server is off until StartListening (panel or Blueprint)
 }
 
 void UAudioLoomOscSubsystem::Deinitialize()
 {
-	StopListening();
+	StopListening(); // release UDP sockets before world dies
 	Super::Deinitialize();
 }
 
@@ -67,6 +75,7 @@ void UAudioLoomOscSubsystem::RebuildComponentRegistry()
 	UWorld* World = GetWorld();
 	if (!World) return;
 
+	// Full world scan: each component registers three full OSC addresses under its base
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		TArray<UAudioLoomComponent*> Comps;
@@ -82,7 +91,7 @@ void UAudioLoomOscSubsystem::RebuildComponentRegistry()
 			FString StopTag = Base + TEXT("/stop");
 			FString LoopTag = Base + TEXT("/loop");
 
-			PlayTagToComponents.FindOrAdd(PlayTag).Add(Comp);
+			PlayTagToComponents.FindOrAdd(PlayTag).Add(Comp);   // one address → possibly multiple comps if duplicated
 			StopTagToComponents.FindOrAdd(StopTag).Add(Comp);
 			LoopTagToComponents.FindOrAdd(LoopTag).Add(Comp);
 		}
@@ -102,7 +111,7 @@ bool UAudioLoomOscSubsystem::StartListening()
 		return false;
 	}
 
-	OSCServer = UOSCManager::CreateOSCServer(TEXT("0.0.0.0"), Port, false, true, TEXT("AudioLoom"), this);
+	OSCServer = UOSCManager::CreateOSCServer(TEXT("0.0.0.0"), Port, false, true, TEXT("AudioLoom"), this); // UDP, receive enabled
 	if (!OSCServer)
 	{
 		UE_LOG(LogTemp, Error, TEXT("AudioLoom OSC: Failed to create server on port %d"), Port);
@@ -124,12 +133,12 @@ void UAudioLoomOscSubsystem::StopListening()
 	if (OSCServer)
 	{
 		OSCServer->Stop();
-		OSCServer->OnOscMessageReceivedNative.RemoveAll(this);
+		OSCServer->OnOscMessageReceivedNative.RemoveAll(this); // don’t call back into a destroyed subsystem
 		OSCServer = nullptr;
 	}
 	if (OSCClient)
 	{
-		OSCClient = nullptr;
+		OSCClient = nullptr; // UPROPERTY; GC will collect when no other refs
 	}
 }
 
@@ -143,16 +152,16 @@ void UAudioLoomOscSubsystem::UpdateMonitoringTarget()
 	const UAudioLoomOscSettings* Settings = GetDefault<UAudioLoomOscSettings>();
 	FString IP = Settings->SendIP;
 	int32 Port = Settings->SendPort;
-	if (IP.IsEmpty()) IP = TEXT("127.0.0.1");
+	if (IP.IsEmpty()) IP = TEXT("127.0.0.1"); // sane default for local Max/PD/TouchOSC bridges
 	if (Port <= 0) Port = 9001;
 
-	OSCClient = UOSCManager::CreateOSCClient(IP, Port, TEXT("AudioLoomMonitor"), this);
+	OSCClient = UOSCManager::CreateOSCClient(IP, Port, TEXT("AudioLoomMonitor"), this); // replaces previous client
 }
 
 void UAudioLoomOscSubsystem::HandleOSCMessage(const FOSCMessage& Message, const FString& IPAddress, uint16 Port)
 {
 	const FString AddressStr = UOSCManager::GetOSCAddressFullPath(Message.GetAddress());
-	FString Normalized = NormalizeOscAddress(AddressStr);
+	FString Normalized = NormalizeOscAddress(AddressStr); // must match keys built in RebuildComponentRegistry
 
 	float TriggerValue = 0.f;
 	TArray<float> Floats;
@@ -167,6 +176,7 @@ void UAudioLoomOscSubsystem::HandleOSCMessage(const FOSCMessage& Message, const 
 
 	if (TArray<TWeakObjectPtr<UAudioLoomComponent>>* PlayComps = PlayTagToComponents.Find(Normalized))
 	{
+		// No args or high value → play; low float could mean “don’t play” in some rigs
 		const bool bTriggerPlay = (TriggerValue > 0.5f || Floats.Num() == 0);
 		for (TWeakObjectPtr<UAudioLoomComponent>& W : *PlayComps)
 		{
@@ -190,7 +200,7 @@ void UAudioLoomOscSubsystem::HandleOSCMessage(const FOSCMessage& Message, const 
 
 	if (TArray<TWeakObjectPtr<UAudioLoomComponent>>* LoopComps = LoopTagToComponents.Find(Normalized))
 	{
-		const bool bEnableLoop = (TriggerValue > 0.5f);
+		const bool bEnableLoop = (TriggerValue > 0.5f); // convention: >0.5 on, else off
 		for (TWeakObjectPtr<UAudioLoomComponent>& W : *LoopComps)
 		{
 			if (UAudioLoomComponent* C = W.Get())
@@ -208,12 +218,12 @@ void UAudioLoomOscSubsystem::SendStateUpdate(UAudioLoomComponent* Component, boo
 	FString Base = NormalizeOscAddress(Component->GetOscAddress());
 	if (Base.IsEmpty()) return;
 
-	FString Addr = Base + TEXT("/state");
+	FString Addr = Base + TEXT("/state"); // monitoring convention: one float 1=playing 0=stopped
 
 	FOSCMessage Msg;
 	Msg.SetAddress(UOSCManager::ConvertStringToOSCAddress(Addr));
 	UOSCManager::AddFloat(Msg, bPlaying ? 1.f : 0.f);
-	OSCClient->SendOSCMessage(Msg);
+	OSCClient->SendOSCMessage(Msg); // UDP unicast to SendIP:SendPort
 }
 
 #undef LOCTEXT_NAMESPACE

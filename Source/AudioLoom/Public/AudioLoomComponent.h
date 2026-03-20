@@ -1,5 +1,23 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomComponent.h
+ * @brief Core runtime type: decodes `USoundWave` to PCM, resamples to 48 kHz, plays via OS backend.
+ *
+ * **Data flow**
+ *   1. `Play()` → `FAudioLoomPcmLoader::LoadFromSoundWave` → float PCM, channel count, sample rate
+ *   2. Optional linear resampling to 48 kHz in `Play()` (per-channel) for backend contract
+ *   3. `FAudioLoomPlaybackBackend::Start` — platform thread pushes samples to WASAPI (Windows) or Core Audio (macOS)
+ *
+ * **Auto-replay** (when `bAutoReplay` and not `bLoop`): `TickComponent` watches `IsPlaying()`;
+ * on transition playing→stopped, starts a delay timer then calls `Play()` again.
+ *
+ * **OSC**: address resolution in `GetOscAddress` / `SetOscAddress`; state notifications via
+ * `UAudioLoomOscSubsystem::SendStateUpdate` (see `AudioLoomOscSubsystem.cpp`).
+ *
+ * **Threading**: `Play`/`Stop` run on game thread; backend uses a dedicated playback thread.
+ */
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -9,8 +27,8 @@
 class USoundWave;
 
 /**
- * Routes sound playback to a specific audio device and channel (Windows/macOS).
- * Attach to any Actor: drop a sound, select device and channel, play.
+ * Routes decoded PCM to a specific audio output device and channel (Windows/macOS).
+ * Does not use Unreal's `AudioComponent` graph — uses OS APIs directly for device/channel selection.
  */
 UCLASS(ClassGroup = (Audio), meta = (BlueprintSpawnableComponent, DisplayName = "Audio Loom"))
 class AUDIOLOOM_API UAudioLoomComponent : public UActorComponent
@@ -88,6 +106,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AudioLoom|OSC", meta = (DisplayName = "OSC Address"))
 	FString OscAddress;
 
+	// --- Blueprint: transport ---
 	UFUNCTION(BlueprintCallable, Category = "AudioLoom")
 	void Play();
 
@@ -103,6 +122,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AudioLoom")
 	bool GetLoop() const { return bLoop; }
 
+	// --- Blueprint: OSC base path (triggers are /base/play|stop|loop) ---
 	/** Get effective OSC base address (resolved default if OscAddress is empty). */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AudioLoom|OSC", meta = (DisplayName = "Get OSC Address"))
 	FString GetOscAddress() const;
@@ -111,6 +131,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AudioLoom|OSC", meta = (DisplayName = "Set OSC Address"))
 	bool SetOscAddress(const FString& InAddress);
 
+	// --- Blueprint: routing mirrors (optional; UPROPERTY already exposes same fields) ---
 	/** Get device ID. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AudioLoom|Routing")
 	FString GetDeviceId() const { return DeviceId; }
@@ -132,16 +153,19 @@ public:
 	void UpdateTickEnabled();
 
 protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	virtual void BeginDestroy() override;
+	virtual void BeginPlay() override;   // optional auto-play, UpdateTickEnabled
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // clear replay state
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override; // auto-replay only
+	virtual void BeginDestroy() override; // Stop + delete backend
 #if WITH_EDITOR
-	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override; // restart play if routing changed while playing
 #endif
 
 private:
-	class FWasapiAudioBackend* AudioBackend = nullptr;
+	/** Non-reflected backend; owned by this component and deleted in `BeginDestroy`. */
+	class FAudioLoomPlaybackBackend* AudioBackend = nullptr;
+	/** Previous-frame playing state (for auto-replay edge detection). */
 	bool bWasPlaying = false;
+	/** Seconds remaining before next `Play()` when auto-replay countdown is active. */
 	float ReplayCountdown = 0.0f;
 };

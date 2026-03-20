@@ -1,16 +1,21 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioOutputDeviceInfo.h
+ * @brief POD describing one output device row in UI and persisted **DeviceId** strings.
+ */
+
 #pragma once
 
 #include "CoreMinimal.h"
 
 /**
  * Information about an audio output device (Windows/macOS).
- * Used for device enumeration and selection in the editor.
+ * **DeviceId** is the stable string from the OS (Windows: IMMDevice `GetId`; Mac: device UID).
  */
-struct AUDIOLOOM_API FWasapiDeviceInfo
+struct AUDIOLOOM_API FAudioOutputDeviceInfo
 {
-	/** Unique device ID from IMMDevice::GetId(). Used for persistence. */
+	/** OS-stable ID (Windows: IMMDevice `GetId`; Mac: Core Audio UID string). Stored on the component. */
 	FString DeviceId;
 
 	/** Human-readable name (e.g. "Speakers (Realtek)"). */

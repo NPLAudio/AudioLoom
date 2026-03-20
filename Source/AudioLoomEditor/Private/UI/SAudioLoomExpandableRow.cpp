@@ -1,11 +1,16 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file SAudioLoomExpandableRow.cpp
+ * @brief Slate lambdas bind to `WeakComp`; `UpdateTickEnabled` after loop/auto-replay toggles.
+ */
+
 #include "UI/SAudioLoomExpandableRow.h"
 #include "UI/SAudioLoomPanel.h"
 #include "AudioLoomComponent.h"
 #include "AudioLoomBlueprintLibrary.h"
-#include "WasapiDeviceEnumerator.h"
-#include "WasapiDeviceInfo.h"
+#include "AudioOutputDeviceEnumerator.h"
+#include "AudioOutputDeviceInfo.h"
 
 #include "Editor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
@@ -29,9 +34,10 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 	Devices = InArgs._Devices;
 	Panel = InArgs._Panel;
 
+	// Weak pointers: row may outlive quick edits; avoid capturing raw Comp in lambdas
 	UAudioLoomComponent* Comp = Item.IsValid() && Item->IsValid() ? Item->Get() : nullptr;
 	TWeakObjectPtr<UAudioLoomComponent> WeakComp = Comp;
-	const TArray<FWasapiDeviceInfo>& Devs = Devices ? *Devices : static_cast<const TArray<FWasapiDeviceInfo>&>(TArray<FWasapiDeviceInfo>());
+	const TArray<FAudioOutputDeviceInfo>& Devs = Devices ? *Devices : static_cast<const TArray<FAudioOutputDeviceInfo>&>(TArray<FAudioOutputDeviceInfo>());
 	SAudioLoomPanel* PanelPtr = Panel.Pin().Get();
 
 	auto SelectInViewport = [PanelPtr, WeakComp]()
@@ -140,7 +146,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 				[
 					SNew(SVerticalBox)
 
-					// Sound picker
+					// Sound picker — same asset path string as Details panel object reference
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					.Padding(0.f, 0.f, 0.f, 4.f)
@@ -156,7 +162,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 							if (!WeakComp.IsValid()) return;
 							UObject* Obj = AssetData.GetAsset();
 							WeakComp->SoundWave = Cast<USoundWave>(Obj);
-							WeakComp->Modify();
+							WeakComp->Modify(); // undo + dirty level package
 						})
 						.AllowedClass(USoundWave::StaticClass())
 						.DisplayThumbnail(false)
@@ -166,7 +172,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 						.ToolTipText(LOCTEXT("SoundPickerTip", "Select sound from Content Browser or drag-drop"))
 					]
 
-					// Device + Channel row
+					// Device + Channel row — mirrors Details: DeviceId string + OutputChannel index
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					.Padding(0.f, 0.f, 0.f, 4.f)
@@ -188,7 +194,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 										if (WeakComp.IsValid()) { WeakComp->DeviceId = FString(); WeakComp->Modify(); }
 									}))
 								);
-								for (const FWasapiDeviceInfo& D : Devs)
+								for (const FAudioOutputDeviceInfo& D : Devs)
 								{
 									if (!D.bIsValid) continue;
 									FString Id = D.DeviceId;
@@ -212,7 +218,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 									if (!WeakComp.IsValid()) return LOCTEXT("DefaultDevice", "Default Output");
 									FString Id = WeakComp->DeviceId;
 									if (Id.IsEmpty()) return LOCTEXT("DefaultDevice", "Default Output");
-									for (const FWasapiDeviceInfo& D : Devs)
+									for (const FAudioOutputDeviceInfo& D : Devs)
 									{
 										if (D.DeviceId == Id) return FText::FromString(D.FriendlyName);
 									}
@@ -229,7 +235,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 							.OnGetMenuContent_Lambda([WeakComp]()
 							{
 								FString DevId = WeakComp.IsValid() ? WeakComp->DeviceId : FString();
-								FWasapiDeviceInfo Info = FWasapiDeviceEnumerator::GetDeviceById(DevId);
+								FAudioOutputDeviceInfo Info = FAudioOutputDeviceEnumerator::GetDeviceById(DevId);
 								int32 NumCh = Info.bIsValid ? Info.NumChannels : 8;
 								FMenuBuilder MenuBuilder(true, nullptr);
 								MenuBuilder.AddMenuEntry(
@@ -528,7 +534,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 						]
 					]
 
-					// Play/Stop
+					// Transport — same as Details “Preview” row (editor-time hardware playback)
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					[
@@ -541,7 +547,7 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 							.Text(LOCTEXT("Play", "Play"))
 							.OnClicked_Lambda([WeakComp]()
 							{
-								if (WeakComp.IsValid()) WeakComp->Play();
+								if (WeakComp.IsValid()) WeakComp->Play(); // decodes SoundWave again each click
 								return FReply::Handled();
 							})
 						]

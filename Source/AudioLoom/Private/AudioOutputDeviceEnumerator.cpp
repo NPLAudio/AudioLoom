@@ -1,6 +1,14 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
-#include "WasapiDeviceEnumerator.h"
+/**
+ * @file AudioOutputDeviceEnumerator.cpp
+ * @brief Device enumeration and **max channel** probing (Windows may report stereo in metadata).
+ *
+ * `GetDeviceMaxChannels` uses `IAudioClient::IsFormatSupported` to discover higher channel counts
+ * when the engine-reported format is conservative (common with virtual/multichannel devices).
+ */
+
+#include "AudioOutputDeviceEnumerator.h"
 
 #if PLATFORM_MAC
 #include <CoreAudio/CoreAudio.h>
@@ -26,12 +34,13 @@ static int32 GetDeviceMaxChannels(IMMDevice* pDevice)
 {
 	IAudioClient* pClient = nullptr;
 	HRESULT hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&pClient);
-	if (FAILED(hr) || !pClient) return 2;
+	if (FAILED(hr) || !pClient) return 2; // pessimistic default if we cannot open the device
 
 	static const int32 ChannelMasks[] = { 0, KSAUDIO_SPEAKER_STEREO, KSAUDIO_SPEAKER_QUAD, KSAUDIO_SPEAKER_5POINT1, KSAUDIO_SPEAKER_7POINT1_SURROUND };
 	static const int32 ChannelCounts[] = { 1, 2, 4, 6, 8 };
 	int32 MaxChannels = 2;
 
+	// Try even counts 8..32 first: finds wide interfaces that accept a generic channel mask
 	for (int32 probeCh = 8; probeCh <= 32; probeCh += 2)
 	{
 		WAVEFORMATEXTENSIBLE wfx = {};
@@ -51,14 +60,15 @@ static int32 GetDeviceMaxChannels(IMMDevice* pDevice)
 		if (pClosest) CoTaskMemFree(pClosest);
 		if (hr == S_OK)
 		{
-			MaxChannels = probeCh;
+			MaxChannels = probeCh; // last successful probe wins as we increase
 		}
 		else
 		{
-			break;
+			break; // stop ascending once driver rejects this width
 		}
 	}
 
+	// No luck with 8+ — try common surround layouts (mono..7.1) in exclusive mode
 	if (MaxChannels == 2)
 	{
 		for (int32 i = 4; i >= 0; --i)
@@ -121,11 +131,12 @@ static int32 GetDeviceMaxChannels(IMMDevice* pDevice)
 #pragma comment(lib, "ole32.lib")
 #endif
 
-TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
+TArray<FAudioOutputDeviceInfo> FAudioOutputDeviceEnumerator::GetOutputDevices()
 {
-	TArray<FWasapiDeviceInfo> Result;
+	TArray<FAudioOutputDeviceInfo> Result;
 
 #if PLATFORM_WINDOWS
+	// Windows audio stack is COM-based; enumerator lists all active render endpoints
 	IMMDeviceEnumerator* pEnumerator = nullptr;
 	IMMDeviceCollection* pDevices = nullptr;
 
@@ -159,7 +170,7 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 
 	Result.Reserve(Count);
 
-	for (UINT i = 0; i < Count; ++i)
+	for (UINT i = 0; i < Count; ++i) // one FAudioOutputDeviceInfo per physical/logical output
 	{
 		IMMDevice* pDevice = nullptr;
 		hr = pDevices->Item(i, &pDevice);
@@ -176,9 +187,9 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 			continue;
 		}
 
-		FWasapiDeviceInfo Info;
-		Info.DeviceId = pwszId;
-		CoTaskMemFree(pwszId);
+		FAudioOutputDeviceInfo Info;
+		Info.DeviceId = pwszId; // persist this string on UAudioLoomComponent.DeviceId
+		CoTaskMemFree(pwszId);  // COM allocator — must not use free()
 
 		IPropertyStore* pProps = nullptr;
 		hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
@@ -219,6 +230,7 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 			Info.NumChannels = FMath::Max(FormatChannels, ProbeChannels);
 		}
 
+		// Property blob missing? Fall back to mix format (what the shared-mode engine uses)
 		if (!Info.bIsValid)
 		{
 			int32 MixChannels = 2;
@@ -255,6 +267,7 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 	pEnumerator->Release();
 
 #elif PLATFORM_MAC
+	// kAudioObjectSystemObject = “all hardware”; we ask for the list of device IDs
 	AudioObjectPropertyAddress Addr = {
 		kAudioHardwarePropertyDevices,
 		kAudioObjectPropertyScopeGlobal,
@@ -273,6 +286,7 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 	for (UInt32 i = 0; i < NumDevices; ++i)
 	{
 		AudioDeviceID DevID = DeviceIDs[i];
+		// Skip anything with no output streams (e.g. input-only interfaces)
 		Addr.mSelector = kAudioDevicePropertyStreamConfiguration;
 		Addr.mScope = kAudioDevicePropertyScopeOutput;
 		UInt32 StreamSize = 0;
@@ -292,7 +306,7 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 		}
 		if (OutChannels == 0) continue;
 
-		FWasapiDeviceInfo Info;
+		FAudioOutputDeviceInfo Info;
 		Info.NumChannels = static_cast<int32>(OutChannels);
 		Info.SampleRate = 48000;
 		Info.BytesPerSample = 4;
@@ -347,27 +361,28 @@ TArray<FWasapiDeviceInfo> FWasapiDeviceEnumerator::GetOutputDevices()
 	return Result;
 }
 
-FWasapiDeviceInfo FWasapiDeviceEnumerator::GetDeviceById(const FString& DeviceId)
+FAudioOutputDeviceInfo FAudioOutputDeviceEnumerator::GetDeviceById(const FString& DeviceId)
 {
 	if (DeviceId.IsEmpty())
 	{
-		return GetDefaultOutputDevice();
+		return GetDefaultOutputDevice(); // empty selection in UI means “system default”
 	}
-	TArray<FWasapiDeviceInfo> Devices = GetOutputDevices();
-	for (const FWasapiDeviceInfo& D : Devices)
+	TArray<FAudioOutputDeviceInfo> Devices = GetOutputDevices(); // linear scan — list is usually small
+	for (const FAudioOutputDeviceInfo& D : Devices)
 	{
 		if (D.DeviceId == DeviceId)
 		{
 			return D;
 		}
 	}
-	return FWasapiDeviceInfo();
+	return FAudioOutputDeviceInfo();
 }
 
-FWasapiDeviceInfo FWasapiDeviceEnumerator::GetDefaultOutputDevice()
+FAudioOutputDeviceInfo FAudioOutputDeviceEnumerator::GetDefaultOutputDevice()
 {
-	FWasapiDeviceInfo Result;
+	FAudioOutputDeviceInfo Result;
 #if PLATFORM_WINDOWS
+	// eRender + eConsole = “what you hear” default, same as many apps use
 	IMMDeviceEnumerator* pEnumerator = nullptr;
 	IMMDevice* pDevice = nullptr;
 
@@ -446,6 +461,7 @@ FWasapiDeviceInfo FWasapiDeviceEnumerator::GetDefaultOutputDevice()
 	}
 	pDevice->Release();
 #elif PLATFORM_MAC
+	// Default output device only (no separate “default” object like Windows endpoint role)
 	AudioObjectPropertyAddress Addr = {
 		kAudioHardwarePropertyDefaultOutputDevice,
 		kAudioObjectPropertyScopeGlobal,

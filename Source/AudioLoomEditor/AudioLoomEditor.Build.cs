@@ -13,20 +13,21 @@ public class AudioLoomEditor : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"AudioLoom",
+			"AudioLoom", // runtime types: UAudioLoomComponent, enumerators, etc.
 		});
 
+		// Editor-only: Slate UI, details panel, tabs, workspace menu
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"Slate",
 			"SlateCore",
 			"InputCore",
 			"UnrealEd",
-			"PropertyEditor",
-			"ContentBrowser",
+			"PropertyEditor",      // IDetailCustomization, property handles
+			"ContentBrowser",      // object picker widgets
 			"DetailCustomizations",
 			"EditorStyle",
-			"LevelEditor",
+			"LevelEditor",         // GEditor, selection, viewport focus
 			"WorkspaceMenuStructure",
 			"EditorSubsystem",
 		});

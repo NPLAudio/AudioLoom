@@ -1,22 +1,28 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomComponent.cpp
+ * @brief Implements playback, PCM load/resample, OSC helpers, and editor hot-restart of routing.
+ */
+
 #include "AudioLoomComponent.h"
 #include "AudioLoomPcmLoader.h"
 #include "AudioLoomBlueprintLibrary.h"
 #include "AudioLoomOscSubsystem.h"
-#include "WasapiAudioBackend.h"
+#include "AudioLoomPlaybackBackend.h"
 #include "Sound/SoundWave.h"
 #include "UObject/UnrealType.h"
 
 UAudioLoomComponent::UAudioLoomComponent()
 {
-	PrimaryComponentTick.bCanEverTick = true;  // Used when bAutoReplay is on
-	PrimaryComponentTick.bStartWithTickEnabled = false;
-	AudioBackend = new FWasapiAudioBackend();
+	PrimaryComponentTick.bCanEverTick = true;  // may enable later for auto-replay countdown
+	PrimaryComponentTick.bStartWithTickEnabled = false; // off until UpdateTickEnabled says otherwise
+	AudioBackend = new FAudioLoomPlaybackBackend();       // raw pointer: freed in BeginDestroy (not UObject)
 }
 
 void UAudioLoomComponent::UpdateTickEnabled()
 {
+	// Tick only needed for auto-replay: loop mode is handled inside the backend; no SoundWave → nothing to replay
 	SetComponentTickEnabled(bAutoReplay && !bLoop && SoundWave != nullptr);
 	if (!bAutoReplay)
 	{
@@ -27,8 +33,8 @@ void UAudioLoomComponent::UpdateTickEnabled()
 void UAudioLoomComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	UpdateTickEnabled();
-	bWasPlaying = false;
+	UpdateTickEnabled(); // sync tick with bAutoReplay / bLoop after load
+	bWasPlaying = false; // so first IsPlaying() edge isn’t mistaken for “just stopped”
 	if (bPlayOnBeginPlay)
 	{
 		Play();
@@ -45,12 +51,12 @@ void UAudioLoomComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void UAudioLoomComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	if (!bAutoReplay || bLoop || !SoundWave) return;
+	if (!bAutoReplay || bLoop || !SoundWave) return; // loop: backend repeats; no SoundWave: nothing to replay
 
 	const bool bPlaying = IsPlaying();
 	if (bWasPlaying && !bPlaying)
 	{
-		// Playback ended — start countdown
+		// Edge: was playing last frame, silent now → treat as clip finished (non-loop)
 		if (bRandomReplayDelay)
 		{
 			ReplayCountdown = FMath::RandRange(FMath::Max(0.0f, ReplayDelayMin), FMath::Max(ReplayDelayMin, ReplayDelayMax));
@@ -60,7 +66,7 @@ void UAudioLoomComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			ReplayCountdown = FMath::Max(0.0f, ReplayDelaySeconds);
 		}
 	}
-	bWasPlaying = bPlaying;
+	bWasPlaying = bPlaying; // update for next frame’s edge detect
 
 	if (ReplayCountdown > 0.0f)
 	{
@@ -68,7 +74,7 @@ void UAudioLoomComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		if (ReplayCountdown <= 0.0f)
 		{
 			ReplayCountdown = 0.0f;
-			Play();
+			Play(); // fire another one-shot play; backend thread starts fresh
 		}
 	}
 }
@@ -78,6 +84,7 @@ void UAudioLoomComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	const FName PropName = PropertyChangedEvent.GetMemberPropertyName();
+	// Routing/backend settings require a fresh Start() on the audio device; restart if currently playing
 	if ((PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, OutputChannel) ||
 	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, DeviceId) ||
 	     PropName == GET_MEMBER_NAME_CHECKED(UAudioLoomComponent, bUseExclusiveMode) ||
@@ -97,7 +104,7 @@ void UAudioLoomComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
 
 void UAudioLoomComponent::BeginDestroy()
 {
-	Stop();
+	Stop(); // join playback thread before UObject teardown
 	if (AudioBackend)
 	{
 		delete AudioBackend;
@@ -115,6 +122,7 @@ void UAudioLoomComponent::Play()
 	}
 	if (!AudioBackend) return;
 
+	// Decode asset to float PCM (editor: imported data; else WAV next to uasset if present)
 	FAudioLoomPcmResult Result = FAudioLoomPcmLoader::LoadFromSoundWave(SoundWave);
 	if (!Result.bSuccess)
 	{
@@ -122,11 +130,11 @@ void UAudioLoomComponent::Play()
 		return;
 	}
 
-	// Resample to 48kHz if needed (per-channel to preserve stereo/multi-channel)
+	// Backend expects 48 kHz float PCM; linear interpolation per channel if source rate differs
 	TArray<float> PCM = Result.PCM;
 	if (Result.SampleRate != 48000 && Result.SampleRate > 0 && Result.NumChannels > 0)
 	{
-		const float Ratio = 48000.0f / Result.SampleRate;
+		const float Ratio = 48000.0f / Result.SampleRate; // dst_time = src_time * Ratio in frames
 		const int32 NumCh = FMath::Max(1, Result.NumChannels);
 		const int32 SrcFrames = PCM.Num() / NumCh;
 		const int32 DstFrames = FMath::RoundToInt(SrcFrames * Ratio);
@@ -136,7 +144,7 @@ void UAudioLoomComponent::Play()
 		{
 			for (int32 i = 0; i < DstFrames; ++i)
 			{
-				const float SrcIdx = i / Ratio;
+				const float SrcIdx = i / Ratio; // fractional source frame index
 				const int32 F0 = FMath::Clamp(FMath::FloorToInt(SrcIdx), 0, SrcFrames - 1);
 				const int32 F1 = FMath::Clamp(F0 + 1, 0, SrcFrames - 1);
 				const float Frac = SrcIdx - F0;
@@ -148,8 +156,10 @@ void UAudioLoomComponent::Play()
 		PCM = MoveTemp(Resampled);
 	}
 
+	// DeviceId empty → backend opens default output; OutputChannel 0 → all device channels get source
 	AudioBackend->Start(DeviceId, PCM, Result.NumChannels, OutputChannel, bLoop, bUseExclusiveMode, BufferSizeMs);
 
+	// Optional: tell external OSC monitors we started (Send IP:Port from project settings)
 	if (UWorld* W = GetWorld())
 	{
 		if (UAudioLoomOscSubsystem* Sub = W->GetSubsystem<UAudioLoomOscSubsystem>())
@@ -165,13 +175,13 @@ void UAudioLoomComponent::Stop()
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	if (AudioBackend)
 	{
-		AudioBackend->Stop();
+		AudioBackend->Stop(); // blocks until playback thread finishes
 	}
 	if (UWorld* W = GetWorld())
 	{
 		if (UAudioLoomOscSubsystem* Sub = W->GetSubsystem<UAudioLoomOscSubsystem>())
 		{
-			Sub->SendStateUpdate(this, false);
+			Sub->SendStateUpdate(this, false); // optional outbound OSC (same guard as Play)
 		}
 	}
 #endif
@@ -180,15 +190,15 @@ void UAudioLoomComponent::Stop()
 bool UAudioLoomComponent::IsPlaying() const
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
-	return AudioBackend && AudioBackend->IsPlaying();
+	return AudioBackend && AudioBackend->IsPlaying(); // false after thread exits or before first Play
 #else
-	return false;
+	return false; // no backend on other platforms
 #endif
 }
 
 void UAudioLoomComponent::SetLoop(bool bInLoop)
 {
-	bLoop = bInLoop;
+	bLoop = bInLoop; // next Start() picks this up; if already playing, loop flag is in backend — restart play to apply
 }
 
 FString UAudioLoomComponent::GetOscAddress() const
@@ -201,8 +211,8 @@ FString UAudioLoomComponent::GetOscAddress() const
 	AActor* Owner = GetOwner();
 	if (!Owner) return TEXT("/audioloom/unnamed");
 	TArray<UAudioLoomComponent*> Comps;
-	Owner->GetComponents(Comps);
-	int32 Idx = Comps.IndexOfByKey(this);
+	Owner->GetComponents(Comps);              // order matches editor “array of components”
+	int32 Idx = Comps.IndexOfByKey(this);     // stable index for default path
 	return FString::Printf(TEXT("/audioloom/%s/%d"), *Owner->GetName(), FMath::Max(0, Idx));
 }
 
@@ -210,11 +220,11 @@ bool UAudioLoomComponent::SetOscAddress(const FString& InAddress)
 {
 	if (InAddress.IsEmpty())
 	{
-		OscAddress = InAddress;
+		OscAddress = InAddress; // clear → GetOscAddress falls back to default path
 		return true;
 	}
 	FString Normalized = UAudioLoomBlueprintLibrary::NormalizeOscAddress(InAddress);
-	if (Normalized.IsEmpty()) return false;
+	if (Normalized.IsEmpty()) return false; // illegal OSC path per engine rules
 	OscAddress = Normalized;
 	return true;
 }

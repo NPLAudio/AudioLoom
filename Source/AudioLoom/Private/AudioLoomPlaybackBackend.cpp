@@ -1,6 +1,23 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
-#include "WasapiAudioBackend.h"
+/**
+ * @file AudioLoomPlaybackBackend.cpp
+ * @brief Platform audio output: **Windows** WASAPI render thread; **macOS** Core Audio IO callback.
+ *
+ * **Windows (`RunPlayback`)**: COM init, resolve device (default or match `DeviceId`), `IAudioClient`
+ * shared/exclusive, optional event-driven buffer fill, `WriteFrames` maps source channels to device
+ * (0 = mirror all source ch; N = route mono from first source channel to logical output N).
+ *
+ * **macOS (`RunPlayback` + `MacIOProc`)**: pick device by UID string, query stream layout,
+ * non-interleaved float output per buffer; `ReadOffset` advances per frame across channels.
+ *
+ * **Looping**: `bLoop` wraps read offset; non-loop exits when buffer is flagged silent/end.
+ *
+ * To port to Linux (e.g. ALSA/Pulse), add a third `FAudioLoomPlaybackBackendImpl` variant and keep
+ * `FAudioLoomPlaybackBackend` API stable for `UAudioLoomComponent`.
+ */
+
+#include "AudioLoomPlaybackBackend.h"
 
 #if PLATFORM_MAC
 #include <CoreAudio/CoreAudio.h>
@@ -22,7 +39,9 @@
 #define REFTIMES_PER_SEC 10000000
 #define REFTIMES_PER_MILLISEC 10000
 
-class FWasapiAudioBackendImpl
+// ---------- Windows: IMMDevice → IAudioClient → IAudioRenderClient (see RunPlayback) ----------
+
+class FAudioLoomPlaybackBackendImpl
 {
 public:
 	std::atomic<bool> bStopRequested{false};
@@ -38,7 +57,7 @@ public:
 
 	void RunPlayback()
 	{
-		CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		CoInitializeEx(nullptr, COINIT_MULTITHREADED); // this thread owns COM for device/audio calls
 
 		IMMDeviceEnumerator* pEnumerator = nullptr;
 		IMMDevice* pDevice = nullptr;
@@ -57,9 +76,10 @@ public:
 			return;
 		}
 
-		hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
+		hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice); // starting point
 		if (DeviceId.Len() > 0)
 		{
+			// User picked a specific endpoint — search collection by string ID from enumeration UI
 			IMMDeviceCollection* pDevices = nullptr;
 			if (SUCCEEDED(pEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pDevices)))
 			{
@@ -99,7 +119,7 @@ public:
 
 		hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&pAudioClient);
 		pEnumerator->Release();
-		pDevice->Release();
+		pDevice->Release(); // IAudioClient holds what it needs; device interface can go
 
 		if (FAILED(hr) || !pAudioClient)
 		{
@@ -108,7 +128,7 @@ public:
 			return;
 		}
 
-		hr = pAudioClient->GetMixFormat(&pwfx);
+		hr = pAudioClient->GetMixFormat(&pwfx); // shared-mode mix format; we fill buffers to match this layout
 		if (FAILED(hr) || !pwfx)
 		{
 			pAudioClient->Release();
@@ -195,7 +215,7 @@ public:
 			: false;
 		const int32 BytesPerFrame = (pwfx->wBitsPerSample / 8) * DevChannels;
 
-		int64 ReadOffset = 0;
+		int64 ReadOffset = 0; // next source frame index (advances once per output frame written)
 		const int64 TotalFrames = PCMCopy.Num() / FMath::Max(1, SourceChannels);
 		if (TotalFrames <= 0)
 		{
@@ -207,6 +227,7 @@ public:
 			return;
 		}
 
+		// Pack one device buffer: interleaved output (ch0,ch1,…) per frame in *device* order
 		auto WriteFrames = [&](BYTE* pData, UINT32 NumFrames, DWORD& OutFlags) -> void
 		{
 			OutFlags = 0;
@@ -223,6 +244,7 @@ public:
 					float Sample = 0.0f;
 					if (OutputChannel == 0)
 					{
+						// Route: source ch N → device ch N (up to min of counts)
 						if (ch < SourceChannels && SampleOffset + ch < PCMCopy.Num())
 						{
 							Sample = PCMCopy[SampleOffset + ch];
@@ -230,6 +252,7 @@ public:
 					}
 					else if (ch + 1 == OutputChannel)
 					{
+						// Single channel: duplicate first source channel only to that output
 						if (SampleOffset < PCMCopy.Num())
 						{
 							Sample = PCMCopy[SampleOffset];
@@ -251,7 +274,7 @@ public:
 				++ReadOffset;
 				if (!bLoop && ReadOffset >= TotalFrames && OutFlags == 0)
 				{
-					OutFlags = AUDCLNT_BUFFERFLAGS_SILENT;
+					OutFlags = AUDCLNT_BUFFERFLAGS_SILENT; // tell driver rest of buffer is silence
 				}
 			}
 		};
@@ -272,6 +295,7 @@ public:
 		double hnsActualDuration = (double)REFTIMES_PER_SEC * BufferFrameCount / DevSampleRate;
 		pAudioClient->Start();
 
+		// Pull model: wait for driver (event) or sleep, then ask how many frames are free to fill
 		while (!bStopRequested)
 		{
 			if (bUseEvent && hEvent)
@@ -288,10 +312,10 @@ public:
 			}
 
 			UINT32 numFramesPadding = 0;
-			pAudioClient->GetCurrentPadding(&numFramesPadding);
+			pAudioClient->GetCurrentPadding(&numFramesPadding); // frames queued ahead of write cursor
 			UINT32 numFramesAvailable = BufferFrameCount - numFramesPadding;
 
-			if (numFramesAvailable == 0) continue;
+			if (numFramesAvailable == 0) continue; // buffer full, wait for next wake
 
 			int64 FramesRemaining = bLoop ? numFramesAvailable : FMath::Max(0ll, TotalFrames - ReadOffset);
 			UINT32 FramesToWrite = FMath::Min(numFramesAvailable, (UINT32)FramesRemaining);
@@ -336,7 +360,10 @@ public:
 		bPlaying = false;
 	}
 };
+
 #elif PLATFORM_MAC
+// ---------- macOS: AudioDeviceIOProc + per-frame channel mapping ----------
+
 struct FCoreAudioPlaybackContext
 {
 	const float* PCM = nullptr;
@@ -372,6 +399,7 @@ static OSStatus MacIOProc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
 	}
 	if (NumFrames == 0) return noErr;
 
+	// One output frame = one advance of ReadOffset; fill every logical output channel for this slice
 	for (UInt32 f = 0; f < NumFrames; ++f)
 	{
 		if (Ctx->bStopRequested) break;
@@ -419,7 +447,8 @@ static OSStatus MacIOProc(AudioObjectID inDevice, const AudioTimeStamp* inNow,
 	return noErr;
 }
 
-class FWasapiAudioBackendImpl
+/** macOS impl: same member layout as Windows for `FAudioLoomPlaybackBackend::Start` (exclusive/buffer ignored). */
+class FAudioLoomPlaybackBackendImpl
 {
 public:
 	std::atomic<bool> bStopRequested{false};
@@ -436,6 +465,7 @@ public:
 	void RunPlayback()
 	{
 		AudioDeviceID DevID = kAudioObjectUnknown;
+		// Default route: system’s current output device (same idea as Windows default endpoint)
 		AudioObjectPropertyAddress Addr = {
 			kAudioHardwarePropertyDefaultOutputDevice,
 			kAudioObjectPropertyScopeGlobal,
@@ -451,6 +481,7 @@ public:
 
 		if (DeviceId.Len() > 0)
 		{
+			// Match saved UID string from enumeration (see AudioOutputDeviceEnumerator Mac path)
 			Addr.mSelector = kAudioHardwarePropertyDevices;
 			DataSize = 0;
 			Err = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &Addr, 0, nullptr, &DataSize);
@@ -497,6 +528,7 @@ public:
 
 		TArray<uint8> Buf;
 		Buf.SetNum(StreamSize);
+		// Variable-size AudioBufferList describing physical buffers / channel groups
 		Err = AudioObjectGetPropertyData(DevID, &Addr, 0, nullptr, &StreamSize, Buf.GetData());
 		if (Err != noErr) { bPlaying = false; return; }
 
@@ -525,13 +557,14 @@ public:
 		Err = AudioDeviceStart(DevID, ProcID);
 		if (Err != noErr) { AudioDeviceDestroyIOProcID(DevID, ProcID); bPlaying = false; return; }
 
+		// Mac: real work is in MacIOProc; this thread only waits for stop or end-of-file
 		while (!bStopRequested)
 		{
 			if (!bLoop && Ctx.ReadOffset.load(std::memory_order_relaxed) >= TotalFrames) break;
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		Ctx.bStopRequested = true;
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		Ctx.bStopRequested = true; // signal callback to stop advancing
+		std::this_thread::sleep_for(std::chrono::milliseconds(50)); // let last buffers drain
 		AudioDeviceStop(DevID, ProcID);
 		AudioDeviceDestroyIOProcID(DevID, ProcID);
 		bPlaying = false;
@@ -539,25 +572,27 @@ public:
 };
 #endif
 
-FWasapiAudioBackend::FWasapiAudioBackend()
+// ---------- Public PIMPL wrappers ----------
+
+FAudioLoomPlaybackBackend::FAudioLoomPlaybackBackend()
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
-	Impl = MakeUnique<FWasapiAudioBackendImpl>();
+	Impl = MakeUnique<FAudioLoomPlaybackBackendImpl>();
 #endif
 }
 
-FWasapiAudioBackend::~FWasapiAudioBackend()
+FAudioLoomPlaybackBackend::~FAudioLoomPlaybackBackend()
 {
 	Stop();
 }
 
-void FWasapiAudioBackend::Start(const FString& InDeviceId, const TArray<float>& PCMData, int32 SourceChannels, int32 OutChannel, bool bInLoop, bool bExclusive, int32 InBufferSizeMs)
+void FAudioLoomPlaybackBackend::Start(const FString& InDeviceId, const TArray<float>& PCMData, int32 SourceChannels, int32 OutChannel, bool bInLoop, bool bExclusive, int32 InBufferSizeMs)
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	if (!Impl) return;
-	Stop();
+	Stop(); // join previous thread if any — only one stream per backend instance
 	Impl->bStopRequested = false;
-	Impl->bPlaying = true;
+	Impl->bPlaying = true; // set before thread start so IsPlaying() is true immediately
 	Impl->bLoop = bInLoop;
 	Impl->bExclusive = bExclusive;
 	Impl->BufferSizeMs = FMath::Max(0, InBufferSizeMs);
@@ -565,23 +600,23 @@ void FWasapiAudioBackend::Start(const FString& InDeviceId, const TArray<float>& 
 	Impl->SourceChannels = FMath::Max(1, SourceChannels);
 	Impl->OutputChannel = OutChannel;
 	Impl->DeviceId = InDeviceId;
-	Impl->PlaybackThread = std::thread([this]() { Impl->RunPlayback(); });
+	Impl->PlaybackThread = std::thread([this]() { Impl->RunPlayback(); }); // detached lifetime until Stop()
 #endif
 }
 
-void FWasapiAudioBackend::Stop()
+void FAudioLoomPlaybackBackend::Stop()
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	if (!Impl) return;
-	Impl->bStopRequested = true;
+	Impl->bStopRequested = true; // RunPlayback loops observe this
 	if (Impl->PlaybackThread.joinable())
 	{
-		Impl->PlaybackThread.join();
+		Impl->PlaybackThread.join(); // blocks until thread exits and sets bPlaying false
 	}
 #endif
 }
 
-bool FWasapiAudioBackend::IsPlaying() const
+bool FAudioLoomPlaybackBackend::IsPlaying() const
 {
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	return Impl && Impl->bPlaying;

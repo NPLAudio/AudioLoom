@@ -1,13 +1,18 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file SAudioLoomPanel.cpp
+ * @brief Constructs OSC section + `SScrollBox` + `SListView`; wires refresh timer and OSC buttons.
+ */
+
 #include "UI/SAudioLoomPanel.h"
 #include "UI/SAudioLoomExpandableRow.h"
 #include "AudioLoomComponent.h"
 #include "AudioLoomBlueprintLibrary.h"
 #include "AudioLoomOscSubsystem.h"
 #include "AudioLoomOscSettings.h"
-#include "WasapiDeviceEnumerator.h"
-#include "WasapiDeviceInfo.h"
+#include "AudioOutputDeviceEnumerator.h"
+#include "AudioOutputDeviceInfo.h"
 
 #include "Editor.h"
 #include "EngineUtils.h"
@@ -32,9 +37,9 @@
 
 void SAudioLoomPanel::Construct(const FArguments& InArgs)
 {
-	RegisterActiveTimer(2.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SAudioLoomPanel::OnRefreshTimer));
+	RegisterActiveTimer(2.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SAudioLoomPanel::OnRefreshTimer)); // seconds; keeps list/OSC map fresh
 
-	RebuildComponentList();
+	RebuildComponentList(); // initial population before first paint
 
 	ChildSlot
 	[
@@ -109,7 +114,7 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 								if (UAudioLoomOscSettings* S = GetMutableDefault<UAudioLoomOscSettings>())
 								{
 									S->ListenPort = Val;
-									S->SaveConfig();
+									S->SaveConfig(); // writes DefaultEngine.ini; restart OSC to apply bind
 								}
 							})
 							.ToolTipText(LOCTEXT("ListenPortTip", "UDP port for receiving OSC triggers"))
@@ -227,10 +232,10 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 				+ SScrollBox::Slot()
 				[
 					SAssignNew(ListView, SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>)
-					.ListItemsSource(&ListViewItems)
+					.ListItemsSource(&ListViewItems) // non-owning pointer to TArray on this widget
 					.OnGenerateRow(this, &SAudioLoomPanel::GenerateRow)
-					.SelectionMode(ESelectionMode::None)
-					.ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
+					.SelectionMode(ESelectionMode::None) // rows are expandable areas, not a single selection list
+					.ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible) // scroll list, don’t zoom viewport
 				]
 			]
 
@@ -255,6 +260,7 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 UWorld* SAudioLoomPanel::GetCurrentWorld() const
 {
 	if (!GEditor) return nullptr;
+	// PIE uses PlayWorld so the list matches what you hear in-game; otherwise edit the persistent level
 	UWorld* World = GEditor->PlayWorld ? GEditor->PlayWorld.Get() : GEditor->GetEditorWorldContext().World();
 	return World;
 }
@@ -263,12 +269,12 @@ void SAudioLoomPanel::RebuildComponentList()
 {
 	ComponentList.Reset();
 	ListViewItems.Reset();
-	CachedDevices = FWasapiDeviceEnumerator::GetOutputDevices();
+	CachedDevices = FAudioOutputDeviceEnumerator::GetOutputDevices(); // one OS call; shared by all rows
 
 	UWorld* World = GetCurrentWorld();
 	if (!World) return;
 
-	for (TActorIterator<AActor> It(World); It; ++It)
+	for (TActorIterator<AActor> It(World); It; ++It) // every actor — components can live on any of them
 	{
 		TArray<UAudioLoomComponent*> Comps;
 		It->GetComponents(Comps);
@@ -277,7 +283,7 @@ void SAudioLoomPanel::RebuildComponentList()
 			if (IsValid(Comp))
 			{
 				ComponentList.Add(Comp);
-				ListViewItems.Add(MakeShared<TWeakObjectPtr<UAudioLoomComponent>>(Comp));
+				ListViewItems.Add(MakeShared<TWeakObjectPtr<UAudioLoomComponent>>(Comp)); // shared ptr = stable row identity for Slate
 			}
 		}
 	}
@@ -310,7 +316,7 @@ bool SAudioLoomPanel::HasComponentListChanged() const
 	{
 		if (W.IsValid()) ++ValidCount;
 	}
-	return ValidCount != Count;
+	return ValidCount != Count; // e.g. actor deleted but list not rebuilt yet → stale weak ptrs
 }
 
 EActiveTimerReturnType SAudioLoomPanel::OnRefreshTimer(double InCurrentTime, float InDeltaTime)
@@ -326,6 +332,7 @@ EActiveTimerReturnType SAudioLoomPanel::OnRefreshTimer(double InCurrentTime, flo
 		{
 			if (Sub->IsListening())
 			{
+				// New components need /play, /stop, /loop map entries without restarting the server
 				Sub->RebuildComponentRegistry();
 			}
 		}
@@ -342,7 +349,7 @@ FReply SAudioLoomPanel::OnRefreshClicked()
 FReply SAudioLoomPanel::OnCheckPortClicked()
 {
 	const int32 Port = GetDefault<UAudioLoomOscSettings>()->ListenPort;
-	const bool bAvailable = UAudioLoomOscSubsystem::IsPortAvailable(Port);
+	const bool bAvailable = UAudioLoomOscSubsystem::IsPortAvailable(Port); // ephemeral UDP bind test
 	if (PortStatusText.IsValid())
 	{
 		PortStatusText->SetText(bAvailable
@@ -391,7 +398,7 @@ FReply SAudioLoomPanel::OnStartStopOscClicked()
 			}
 		}
 	}
-	if (ListView.IsValid()) ListView->Invalidate(EInvalidateWidgetReason::Layout);
+	if (ListView.IsValid()) ListView->Invalidate(EInvalidateWidgetReason::Layout); // Start/Stop button text is dynamic
 	return FReply::Handled();
 }
 
@@ -400,7 +407,7 @@ TSharedRef<ITableRow> SAudioLoomPanel::GenerateRow(
 	const TSharedRef<STableViewBase>& OwnerTable)
 {
 	const int32 Index = ListViewItems.Find(InItem);
-	const bool bInitiallyExpanded = (Index == 0);
+	const bool bInitiallyExpanded = (Index == 0); // open first row so new users see controls immediately
 
 	return SNew(STableRow<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>, OwnerTable)
 		[
@@ -418,8 +425,8 @@ FReply SAudioLoomPanel::OnSelectInViewport(TWeakObjectPtr<UAudioLoomComponent> C
 	AActor* Owner = Component->GetOwner();
 	if (Owner)
 	{
-		GEditor->SelectActor(Owner, true, true);
-		GEditor->MoveViewportCamerasToActor(*Owner, false);
+		GEditor->SelectActor(Owner, true, true);               // replace selection
+		GEditor->MoveViewportCamerasToActor(*Owner, false);     // frame in active viewport(s)
 	}
 	return FReply::Handled();
 }

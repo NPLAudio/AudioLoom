@@ -11,17 +11,19 @@ public class AudioLoom : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
+		// Modules whose public headers this module includes from its own public headers
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"Core",
 			"CoreUObject",
-			"Engine",
-			"OSC",
-			"Sockets",
-			"Networking",
-			"DeveloperSettings",
+			"Engine",           // UWorld, UActorComponent, USoundWave, subsystems
+			"OSC",              // UOSCManager, server/client (OscSubsystem)
+			"Sockets",          // UDP port availability check
+			"Networking",       // often pulled with Sockets for address types
+			"DeveloperSettings", // UAudioLoomOscSettings
 		});
 
+		// Used only from .cpp; not exposed in AudioLoom public API
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"Slate",
@@ -31,13 +33,13 @@ public class AudioLoom : ModuleRules
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
-			// WASAPI requires Windows multimedia
+			// COM (CoCreateInstance) for WASAPI device enumeration / audio client
 			PublicSystemLibraries.Add("Ole32.lib");
 		}
 
 		if (Target.Platform == UnrealTargetPlatform.Mac)
 		{
-			// CoreAudio for device enumeration and output
+			// Native frameworks for AudioObject* APIs and float output buffers
 			PublicFrameworks.AddRange(new string[] { "CoreAudio", "AudioToolbox", "CoreFoundation" });
 		}
 

@@ -1,5 +1,15 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomEditorModule.cpp
+ * @brief Startup/shutdown: property editor layout + **Audio Loom** nomad tab.
+ *
+ * - **Shutdown** must unregister customizations and tab spawners to avoid leaks when
+ *   hot-reloading or disabling the plugin.
+ * - `OpenManagementWindow()` is the public entry used by menus or other code to
+ *   focus the Audio Loom panel (`TryInvokeTab`).
+ */
+
 #include "AudioLoomEditor.h"
 #include "UI/SAudioLoomPanel.h"
 #include "IDetailsView.h"
@@ -17,17 +27,19 @@ const FName FAudioLoomEditorModule::AudioLoomTabName = TEXT("AudioLoomPanel");
 
 void FAudioLoomEditorModule::StartupModule()
 {
+	// --- Details panel: device/channel combos and OSC validation for UAudioLoomComponent ---
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	PropertyModule.RegisterCustomClassLayout(
 		"AudioLoomComponent",
 		FOnGetDetailCustomizationInstance::CreateStatic(&FAudioLoomComponentDetails::MakeInstance));
-	PropertyModule.NotifyCustomizationModuleChanged();
+	PropertyModule.NotifyCustomizationModuleChanged(); // refresh any open Details panels picking up the new layout
 
 	RegisterTab();
 }
 
 void FAudioLoomEditorModule::ShutdownModule()
 {
+	// Hot-reload / disable-plugin: only unregister if the module is still there
 	if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
@@ -36,12 +48,13 @@ void FAudioLoomEditorModule::ShutdownModule()
 
 	if (FGlobalTabmanager::Get()->HasTabSpawner(AudioLoomTabName))
 	{
-		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(AudioLoomTabName);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(AudioLoomTabName); // avoids dangling spawner pointer to `this`
 	}
 }
 
 void FAudioLoomEditorModule::RegisterTab()
 {
+	// Nomad tab: lives under Level Editor category; content is SAudioLoomPanel
 	const IWorkspaceMenuStructure& MenuStructure = WorkspaceMenu::GetMenuStructure();
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
 		AudioLoomTabName,
@@ -53,15 +66,15 @@ void FAudioLoomEditorModule::RegisterTab()
 
 void FAudioLoomEditorModule::OpenManagementWindow()
 {
-	FGlobalTabmanager::Get()->TryInvokeTab(AudioLoomTabName);
+	FGlobalTabmanager::Get()->TryInvokeTab(AudioLoomTabName); // creates tab on first use
 }
 
 TSharedRef<SDockTab> FAudioLoomEditorModule::SpawnTab(const FSpawnTabArgs& Args)
 {
 	return SNew(SDockTab)
-		.TabRole(ETabRole::NomadTab)
+		.TabRole(ETabRole::NomadTab) // user can dock / float like Content Browser
 		[
-			SNew(SAudioLoomPanel)
+			SNew(SAudioLoomPanel) // entire UI tree lives inside this widget
 		];
 }
 

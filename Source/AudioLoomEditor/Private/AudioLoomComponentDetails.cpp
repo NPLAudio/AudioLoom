@@ -1,10 +1,15 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomComponentDetails.cpp
+ * @brief `CustomizeDetails`: categories AudioLoom|Routing, Playback, OSC — uses `IPropertyHandle` for undo/redo.
+ */
+
 #include "AudioLoomComponentDetails.h"
 #include "AudioLoomComponent.h"
 #include "AudioLoomBlueprintLibrary.h"
-#include "WasapiDeviceEnumerator.h"
-#include "WasapiDeviceInfo.h"
+#include "AudioOutputDeviceEnumerator.h"
+#include "AudioOutputDeviceInfo.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailWidgetRow.h"
@@ -32,6 +37,7 @@ void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 		return;
 	}
 
+	// Multi-select: we only drive custom widgets from the first AudioLoomComponent (same as many UE customizations)
 	UAudioLoomComponent* Component = nullptr;
 	for (TWeakObjectPtr<UObject>& Obj : Objects)
 	{
@@ -61,7 +67,7 @@ void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 	RoutingCategory.AddProperty(SoundWaveHandle);
 
 	// Device combo - use PropertyHandle so changes propagate and UI refreshes
-	TArray<FWasapiDeviceInfo> Devices = FWasapiDeviceEnumerator::GetOutputDevices();
+	TArray<FAudioOutputDeviceInfo> Devices = FAudioOutputDeviceEnumerator::GetOutputDevices();
 
 	RoutingCategory.AddProperty(DeviceIdHandle)
 		.CustomWidget()
@@ -87,13 +93,13 @@ void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 						if (DeviceIdHandle.IsValid())
 						{
 							DeviceIdHandle->SetValue(FString());
-							DeviceIdHandle->NotifyPostChange(EPropertyChangeType::ValueSet);
+							DeviceIdHandle->NotifyPostChange(EPropertyChangeType::ValueSet); // marks package dirty + refresh
 						}
 					}))
 				);
-				for (const FWasapiDeviceInfo& D : Devices)
+				for (const FAudioOutputDeviceInfo& D : Devices)
 				{
-					if (!D.bIsValid) continue;
+					if (!D.bIsValid) continue; // skip half-initialized rows from enumeration
 					FString Id = D.DeviceId;
 					FString Name = D.FriendlyName;
 					MenuBuilder.AddMenuEntry(
@@ -124,7 +130,7 @@ void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 						{
 							return LOCTEXT("DefaultDevice", "Default Output");
 						}
-						for (const FWasapiDeviceInfo& D : Devices)
+						for (const FAudioOutputDeviceInfo& D : Devices)
 						{
 							if (D.DeviceId == CurrentId) return FText::FromString(D.FriendlyName);
 						}
@@ -151,16 +157,16 @@ void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 			SNew(SComboButton)
 			.OnGetMenuContent_Lambda([OutputChannelHandle, DeviceIdHandle]()
 			{
-				int32 CurrentNumCh = 8;
+				int32 CurrentNumCh = 8; // fallback if device query fails
 				FString DevId;
 				if (DeviceIdHandle.IsValid() && DeviceIdHandle->GetValue(DevId) == FPropertyAccess::Success)
 				{
-					FWasapiDeviceInfo DevInfo = FWasapiDeviceEnumerator::GetDeviceById(DevId);
+					FAudioOutputDeviceInfo DevInfo = FAudioOutputDeviceEnumerator::GetDeviceById(DevId);
 					if (DevInfo.bIsValid) CurrentNumCh = DevInfo.NumChannels;
 				}
 				else
 				{
-					FWasapiDeviceInfo DefInfo = FWasapiDeviceEnumerator::GetDefaultOutputDevice();
+					FAudioOutputDeviceInfo DefInfo = FAudioOutputDeviceEnumerator::GetDefaultOutputDevice();
 					if (DefInfo.bIsValid) CurrentNumCh = DefInfo.NumChannels;
 				}
 				FMenuBuilder MenuBuilder(true, nullptr);
@@ -279,6 +285,7 @@ void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 					FString Val;
 					if (OscAddressHandle.IsValid() && OscAddressHandle->GetValue(Val) == FPropertyAccess::Success)
 					{
+						// Show computed default in the box when property is empty (still stored empty)
 						return FText::FromString(Val.IsEmpty() && Component ? Component->GetOscAddress() : Val);
 					}
 					return FText();
@@ -289,8 +296,8 @@ void FAudioLoomComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBu
 					FString S = T.ToString().TrimStartAndEnd();
 					if (Component)
 					{
-						if (!Component->SetOscAddress(S)) return;
-						S = Component->OscAddress;
+						if (!Component->SetOscAddress(S)) return; // invalid path — keep old value
+						S = Component->OscAddress; // use normalized form from component
 					}
 					OscAddressHandle->SetValue(S);
 					OscAddressHandle->NotifyPostChange(EPropertyChangeType::ValueSet);

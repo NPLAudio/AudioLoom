@@ -1,5 +1,13 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomPcmLoader.h
+ * @brief WAV parse + `USoundWave` extraction → **interleaved float** PCM for the backend.
+ *
+ * Editor builds may use `GetImportedSoundWaveData` (16-bit PCM). Otherwise falls back to
+ * reading a `.wav` beside the asset. See `AudioLoomPcmLoader.cpp`.
+ */
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,14 +15,14 @@
 class USoundWave;
 
 /**
- * Result of loading PCM audio data.
+ * Result of loading PCM: interleaved floats, **NumChannels** interleaved (L,R,…).
  */
 struct AUDIOLOOM_API FAudioLoomPcmResult
 {
-	TArray<float> PCM;
-	int32 NumChannels = 0;
-	int32 SampleRate = 48000;
-	bool bSuccess = false;
+	TArray<float> PCM;       // interleaved samples; length = frameCount * NumChannels
+	int32 NumChannels = 0;   // 1 = mono, 2 = stereo, etc.
+	int32 SampleRate = 48000; // Hz from WAV fmt or imported asset metadata
+	bool bSuccess = false;    // false if parse failed or no PCM could be obtained
 };
 
 /**

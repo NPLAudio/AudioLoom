@@ -1,5 +1,10 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomPcmLoader.cpp
+ * @brief `ParseWavToFloat`: RIFF walk for `fmt ` + `data`; PCM 16/32 and IEEE float 32.
+ */
+
 #include "AudioLoomPcmLoader.h"
 #include "Sound/SoundWave.h"
 #include "Misc/FileHelper.h"
@@ -30,6 +35,7 @@ struct FWavFmtChunk
 };
 #pragma pack(pop)
 
+/** Walk RIFF chunks for `fmt ` + `data`; supports PCM 16/32 and IEEE float 32-bit. */
 static bool ParseWavToFloat(const uint8* Data, int64 DataSize, FAudioLoomPcmResult& Out)
 {
 	if (!Data || DataSize < 12)
@@ -39,7 +45,7 @@ static bool ParseWavToFloat(const uint8* Data, int64 DataSize, FAudioLoomPcmResu
 
 	if (FMemory::Memcmp(Data, "RIFF", 4) != 0 || FMemory::Memcmp(Data + 8, "WAVE", 4) != 0)
 	{
-		return false;
+		return false; // not a WAV container
 	}
 
 	int32 NumChannels = 0;
@@ -49,13 +55,13 @@ static bool ParseWavToFloat(const uint8* Data, int64 DataSize, FAudioLoomPcmResu
 	const uint8* PcmData = nullptr;
 	int64 PcmSize = 0;
 
-	int64 Offset = 12;
+	int64 Offset = 12; // skip RIFF header (12 bytes: "RIFF" + size + "WAVE")
 	while (Offset + 8 <= DataSize)
 	{
 		const FWavChunkHeader* Chunk = (const FWavChunkHeader*)(Data + Offset);
 		Offset += 8;
 		int64 ChunkDataOffset = Offset;
-		Offset += Chunk->Size;
+		Offset += Chunk->Size; // chunks are padded to even size per spec; many writers pad
 
 		if (FMemory::Memcmp(Chunk->Id, "fmt ", 4) == 0 && Chunk->Size >= 16)
 		{
@@ -78,12 +84,12 @@ static bool ParseWavToFloat(const uint8* Data, int64 DataSize, FAudioLoomPcmResu
 	}
 
 	const int32 BytesPerSample = BitsPerSample / 8;
-	const int64 TotalSamples = PcmSize / (BytesPerSample * NumChannels);
-	Out.PCM.SetNumUninitialized(TotalSamples * NumChannels);
+	const int64 TotalSamples = PcmSize / (BytesPerSample * NumChannels); // frames across all channels
+	Out.PCM.SetNumUninitialized(TotalSamples * NumChannels);             // interleaved LRLR…
 	Out.NumChannels = NumChannels;
 	Out.SampleRate = SampleRate;
 
-	if (AudioFormat == 1) // PCM
+	if (AudioFormat == 1) // PCM integer
 	{
 		if (BitsPerSample == 16)
 		{
@@ -91,7 +97,7 @@ static bool ParseWavToFloat(const uint8* Data, int64 DataSize, FAudioLoomPcmResu
 			float* Dst = Out.PCM.GetData();
 			for (int64 i = 0; i < TotalSamples * NumChannels; ++i)
 			{
-				Dst[i] = Src[i] / 32768.0f;
+				Dst[i] = Src[i] / 32768.0f; // normalize to approx [-1, 1]
 			}
 		}
 		else if (BitsPerSample == 32)
@@ -100,7 +106,7 @@ static bool ParseWavToFloat(const uint8* Data, int64 DataSize, FAudioLoomPcmResu
 			float* Dst = Out.PCM.GetData();
 			for (int64 i = 0; i < TotalSamples * NumChannels; ++i)
 			{
-				Dst[i] = Src[i] / 2147483648.0f;
+				Dst[i] = Src[i] / 2147483648.0f; // 32-bit PCM (rare) → float
 			}
 		}
 		else
@@ -108,11 +114,11 @@ static bool ParseWavToFloat(const uint8* Data, int64 DataSize, FAudioLoomPcmResu
 			return false;
 		}
 	}
-	else if (AudioFormat == 3) // IEEE float
+	else if (AudioFormat == 3) // IEEE float (format 3 in WAV)
 	{
 		if (BitsPerSample == 32)
 		{
-			FMemory::Memcpy(Out.PCM.GetData(), PcmData, PcmSize);
+			FMemory::Memcpy(Out.PCM.GetData(), PcmData, PcmSize); // already float32, same layout as Out.PCM
 		}
 		else
 		{
@@ -134,7 +140,7 @@ FAudioLoomPcmResult FAudioLoomPcmLoader::LoadFromFile(const FString& FilePath)
 	TArray<uint8> RawBytes;
 	if (!FFileHelper::LoadFileToArray(RawBytes, *FilePath))
 	{
-		return Result;
+		return Result; // unreadable path
 	}
 	Result.bSuccess = ParseWavToFloat(RawBytes.GetData(), RawBytes.Num(), Result);
 	return Result;
@@ -153,6 +159,7 @@ FAudioLoomPcmResult FAudioLoomPcmLoader::LoadFromSoundWave(USoundWave* SoundWave
 	uint16 NumChannels = 0;
 
 #if WITH_EDITOR
+	// Editor / cooked-with-editor: fastest path uses imported PCM already in memory
 	if (SoundWave->GetImportedSoundWaveData(RawPCMBytes, SampleRate, NumChannels) && RawPCMBytes.Num() > 0)
 	{
 		// GetImportedSoundWaveData returns 16-bit PCM. Convert to float.
@@ -171,7 +178,7 @@ FAudioLoomPcmResult FAudioLoomPcmLoader::LoadFromSoundWave(USoundWave* SoundWave
 	}
 #endif
 
-	// Fallback: try loading from file path if asset has a source
+	// Packaged game / no editor data: look for sibling .wav next to the uasset on disk
 	FString PackagePath = SoundWave->GetPathName();
 	FString PackageFilename;
 	if (FPackageName::DoesPackageExist(PackagePath, &PackageFilename))

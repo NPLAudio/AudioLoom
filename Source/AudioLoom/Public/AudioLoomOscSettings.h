@@ -1,5 +1,10 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomOscSettings.h
+ * @brief `UDeveloperSettings` persisted in **Config/Engine** — listen port and monitoring destination.
+ */
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,8 +12,8 @@
 #include "AudioLoomOscSettings.generated.h"
 
 /**
- * Persistent OSC configuration for AudioLoom.
- * Access via Project Settings > Audio Loom > OSC.
+ * Persistent OSC configuration for AudioLoom (**Project Settings → Audio Loom → OSC**).
+ * `Config = Engine` → values live in Config/DefaultEngine.ini under [AudioLoom] sections.
  */
 UCLASS(Config = Engine, DefaultConfig, meta = (DisplayName = "Audio Loom OSC"))
 class AUDIOLOOM_API UAudioLoomOscSettings : public UDeveloperSettings

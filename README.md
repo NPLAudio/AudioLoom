@@ -22,6 +22,7 @@ Unreal Engine plugin for routing audio to specific output devices and channels, 
 - [Blueprint API](#blueprint-api)
 - [Project Settings](#project-settings)
 - [Walkthrough Guides](#walkthrough-guides)
+- [For developers (code map)](#for-developers-code-map)
 - [License](#license)
 
 ---
@@ -309,6 +310,27 @@ When a component starts or stops playing, AudioLoom sends:
 2. Assign a sound, device, and channel in the Details panel.
 3. In Blueprint, call **Play** (e.g. from Event BeginPlay or a custom event).
 4. Use **Stop** and **Set Loop** nodes as needed.
+
+---
+
+## For developers (code map)
+
+Source is documented inline (`/** … */` file and class headers, `//` for non-obvious blocks). High-level layout:
+
+| Area | Path | Role |
+|------|------|------|
+| **Runtime module** | `Source/AudioLoom/Public/AudioLoom.h`, `Private/AudioLoom.cpp` | Module + `LogAudioLoom` |
+| **Component** | `AudioLoomComponent.*` | PCM load, resample to 48 kHz, `Play`/`Stop`, auto-replay tick, OSC address helpers |
+| **Backend** | `AudioLoomPlaybackBackend.*` | WASAPI (Windows) / Core Audio (macOS) output thread or IO proc |
+| **Devices** | `AudioOutputDeviceEnumerator.*`, `AudioOutputDeviceInfo.h` | Output device list + channel probing |
+| **PCM** | `AudioLoomPcmLoader.*` | WAV parse + `USoundWave` → float PCM |
+| **OSC** | `AudioLoomOscSubsystem.*`, `AudioLoomOscSettings.*`, `AudioLoomBlueprintLibrary.*` | UDP server/client, settings, address validation |
+| **Convenience actor** | `AudioLoomActor.*` | Placeable actor with one component |
+| **Editor module** | `AudioLoomEditorModule.cpp`, `AudioLoomEditor.h` | Details registration + nomad tab |
+| **Details UI** | `AudioLoomComponentDetails.*` | Property editor customization |
+| **Manager window** | `SAudioLoomPanel.*`, `SAudioLoomExpandableRow.*` | **Window → Audio Loom** Slate UI |
+
+**Extending:** add properties on `UAudioLoomComponent` and thread them through `Play()` → `FAudioLoomPlaybackBackend::Start` if the backend needs them. For new OSC commands, extend `UAudioLoomOscSubsystem::HandleOSCMessage` and document addresses in the panel’s OSC reference box.
 
 ---
 

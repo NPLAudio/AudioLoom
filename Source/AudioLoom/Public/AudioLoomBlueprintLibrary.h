@@ -1,5 +1,10 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomBlueprintLibrary.h
+ * @brief OSC path validation/normalization using Engine **OSC** module (`UOSCManager`).
+ */
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,7 +12,7 @@
 #include "AudioLoomBlueprintLibrary.generated.h"
 
 /**
- * Blueprint-accessible utilities for AudioLoom.
+ * Blueprint-accessible utilities (OSC address helpers) for AudioLoom.
  */
 UCLASS()
 class AUDIOLOOM_API UAudioLoomBlueprintLibrary : public UBlueprintFunctionLibrary
@@ -15,6 +20,7 @@ class AUDIOLOOM_API UAudioLoomBlueprintLibrary : public UBlueprintFunctionLibrar
 	GENERATED_BODY()
 
 public:
+	// All methods are static: Blueprint calls them on the class, no instance exists
 	/**
 	 * Validate an OSC address per OSC 1.0 spec.
 	 * Must start with /, use valid path characters. Returns true if valid.

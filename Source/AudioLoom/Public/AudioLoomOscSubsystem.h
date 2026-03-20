@@ -1,5 +1,15 @@
 // Copyright (c) 2026 AudioLoom Contributors.
 
+/**
+ * @file AudioLoomOscSubsystem.h
+ * @brief Per-world OSC **UDP server** (incoming triggers) and **client** (outgoing `/state`).
+ *
+ * **Registry**: `RebuildComponentRegistry` maps OSC paths (`/base/play`, `/base/stop`, `/base/loop`)
+ * to `UAudioLoomComponent` weak pointers. Call `RebuildComponentRegistry` when levels or addresses change.
+ *
+ * Settings: `UAudioLoomOscSettings` (Project Settings). Requires Engine OSC plugin.
+ */
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -12,8 +22,7 @@ class UOSCClient;
 struct FOSCMessage;
 
 /**
- * World subsystem that runs the AudioLoom OSC server (triggers) and client (monitoring).
- * Exists in both editor and PIE worlds.
+ * World subsystem: OSC UDP listener + monitoring client; editor and PIE worlds each have an instance.
  */
 UCLASS()
 class AUDIOLOOM_API UAudioLoomOscSubsystem : public UWorldSubsystem
@@ -52,17 +61,20 @@ public:
 	virtual void Deinitialize() override;
 
 private:
+	/** Bound to `OSCServer`; parses address and dispatches to components (game thread). */
 	void HandleOSCMessage(const FOSCMessage& Message, const FString& IPAddress, uint16 Port);
 
 	UPROPERTY()
-	UOSCServer* OSCServer;
+	UOSCServer* OSCServer; // UDP listener (incoming triggers)
 
 	UPROPERTY()
-	UOSCClient* OSCClient;
+	UOSCClient* OSCClient; // UDP sender (outgoing /state); recreated when Send IP/Port changes
 
+	/** Full OSC path string → components that should react to …/play */
 	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomComponent>>> PlayTagToComponents;
 	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomComponent>>> StopTagToComponents;
 	TMap<FString, TArray<TWeakObjectPtr<UAudioLoomComponent>>> LoopTagToComponents;
 
+	/** Reserved for future debounced registry rebuilds (currently timer drives refresh from panel). */
 	FTimerHandle RebuildRegistryTimer;
 };
