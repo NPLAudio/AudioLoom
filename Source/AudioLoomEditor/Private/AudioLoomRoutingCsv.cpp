@@ -2,6 +2,7 @@
 
 #include "AudioLoomRoutingCsv.h"
 #include "AudioLoomComponent.h"
+#include "AudioLoomOscSubsystem.h"
 
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -13,7 +14,26 @@
 namespace AudioLoomRoutingCsvInternal
 {
 	/** ComponentName = UObject name (e.g. AudioLoomComponent_1); disambiguates multiple Audio Loom on one actor. */
-	static const TCHAR* HeaderRow = TEXT("ActorName,ActorLabel,ComponentName,ComponentIndex,SoundWave,DeviceId,OutputChannel");
+	static const TCHAR* HeaderRow = TEXT(
+		"ActorName,ActorLabel,ComponentName,ComponentIndex,SoundWave,DeviceId,OutputChannel,OscAddress,OscBase,OscPlay,OscStop,OscLoop,OscState");
+
+	static FString TrimTrailingSlashes(FString In)
+	{
+		while (In.Len() > 0 && In[In.Len() - 1] == TEXT('/'))
+		{
+			In.RemoveAt(In.Len() - 1);
+		}
+		return In;
+	}
+
+	static FString OscJoin(const FString& Base, const TCHAR* Suffix)
+	{
+		if (Base.IsEmpty())
+		{
+			return FString();
+		}
+		return TrimTrailingSlashes(Base) + FString(Suffix);
+	}
 
 	static FString EscapeField(const FString& S)
 	{
@@ -154,6 +174,20 @@ namespace AudioLoomRoutingCsvInternal
 	{
 		return Cols.Contains(FName(ColumnName));
 	}
+
+	/** True if the row has enough fields for this column (avoids treating short rows as empty OSC override). */
+	static bool TryGetColumn(const TArray<FString>& Fields, const TMap<FName, int32>& Cols, const TCHAR* ColumnName, FString& OutValue)
+	{
+		if (const int32* Idx = Cols.Find(FName(ColumnName)))
+		{
+			if (*Idx >= 0 && *Idx < Fields.Num())
+			{
+				OutValue = Fields[*Idx];
+				return true;
+			}
+		}
+		return false;
+	}
 } // namespace
 
 FString FAudioLoomRoutingCsv::BuildRoutingCsv(UWorld* World)
@@ -201,6 +235,22 @@ FString FAudioLoomRoutingCsv::BuildRoutingCsv(UWorld* World)
 			Lines += EscapeField(Comp->DeviceId);
 			Lines += TEXT(",");
 			Lines += FString::FromInt(Comp->OutputChannel);
+			{
+				const FString OscBase = Comp->GetOscAddress();
+				const FString OscOverride = Comp->OscAddress;
+				Lines += TEXT(",");
+				Lines += EscapeField(OscOverride);
+				Lines += TEXT(",");
+				Lines += EscapeField(OscBase);
+				Lines += TEXT(",");
+				Lines += EscapeField(OscJoin(OscBase, TEXT("/play")));
+				Lines += TEXT(",");
+				Lines += EscapeField(OscJoin(OscBase, TEXT("/stop")));
+				Lines += TEXT(",");
+				Lines += EscapeField(OscJoin(OscBase, TEXT("/loop")));
+				Lines += TEXT(",");
+				Lines += EscapeField(OscJoin(OscBase, TEXT("/state")));
+			}
 			Lines += LINE_TERMINATOR;
 		}
 	}
@@ -212,6 +262,7 @@ bool FAudioLoomRoutingCsv::ApplyRoutingCsv(UWorld* World, const FString& CsvText
 	using namespace AudioLoomRoutingCsvInternal;
 	OutAppliedCount = 0;
 	OutErrorsAndWarnings.Reset();
+	bool bAnyOscAddressChanged = false;
 
 	if (!World)
 	{
@@ -370,6 +421,32 @@ bool FAudioLoomRoutingCsv::ApplyRoutingCsv(UWorld* World, const FString& CsvText
 		Comp->DeviceId = DeviceId;
 		Comp->OutputChannel = FMath::Max(0, OutputChannel);
 
+		if (HeaderHasColumn(Cols, TEXT("OscAddress")))
+		{
+			FString OscIn;
+			if (TryGetColumn(Fields, Cols, TEXT("OscAddress"), OscIn))
+			{
+				OscIn.TrimStartAndEndInline();
+				if (OscIn.IsEmpty())
+				{
+					if (!Comp->OscAddress.IsEmpty())
+					{
+						Comp->SetOscAddress(TEXT(""));
+						bAnyOscAddressChanged = true;
+					}
+				}
+				else if (!Comp->SetOscAddress(OscIn))
+				{
+					OutErrorsAndWarnings += FString::Printf(TEXT("Line %d: invalid OscAddress \"%s\" (OSC override not applied; routing applied).\n"),
+						LineIdx + 1, *OscIn);
+				}
+				else
+				{
+					bAnyOscAddressChanged = true;
+				}
+			}
+		}
+
 #if WITH_EDITOR
 		// Match PostEditChangeProperty: restart backend when routing changes while playing.
 		const bool bRoutingChanged = (OldDeviceId != DeviceId) || (OldOutputChannel != OutputChannel) || (OldSoundWave != NewWave);
@@ -381,6 +458,17 @@ bool FAudioLoomRoutingCsv::ApplyRoutingCsv(UWorld* World, const FString& CsvText
 #endif
 
 		++OutAppliedCount;
+	}
+
+	if (bAnyOscAddressChanged && World)
+	{
+		if (UAudioLoomOscSubsystem* Sub = World->GetSubsystem<UAudioLoomOscSubsystem>())
+		{
+			if (Sub->IsListening())
+			{
+				Sub->RebuildComponentRegistry();
+			}
+		}
 	}
 
 	return OutAppliedCount > 0;

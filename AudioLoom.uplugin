@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 7,
-	"VersionName": "1.6",
+	"Version": 8,
+	"VersionName": "1.7",
 	"FriendlyName": "AudioLoom",
 	"Description": "Route sound files to any audio device and select output channels. Windows, macOS.",
 	"Category": "Audio",

@@ -140,7 +140,7 @@ Both share the same features.
 
 ### OSC Address
 
-- Leave **OSC Address** blank to use the default: `/audioloom/OwnerName/Index`
+- Leave **OSC Address** blank to use the default: `/audioloom/<instanceSegment>/<n>` — `<n>` is **1-based** per owner (`1`, `2`, `3` for the first, second, third Audio Loom on that actor). The middle segment uses the **hierarchy root** actor’s **instance label** (**Actor Label** in the Outliner), sanitized for OSC (spaces → `_`, etc.). If the label is empty, the internal actor name is used instead. The root is found by walking **attach parent**, then **parent actor**, so nested actors (e.g. a status mesh) still resolve to the top-level label. **Two different hierarchy roots with the same Actor Label** can produce colliding default paths — the **Audio Loom** panel shows a warning; use **unique** labels or set a custom **OSC Address** per component.
 - Or set a custom address (e.g. `/myshow/speaker1`) — must start with `/` and follow OSC 1.0 path rules
 
 ---
@@ -153,7 +153,7 @@ Central panel for:
 
 - All `AudioLoomComponent` instances in the current level
 - **Refresh** — Update the list
-- **Export CSV** / **Import CSV** — Snapshot or apply **device**, **output channel**, and **sound asset path** for all Audio Loom components in the **current world** (see [CSV routing](#csv-routing-importexport) below)
+- **Export CSV** / **Import CSV** — Snapshot or apply **device**, **output channel**, **sound asset path**, and optional **OSC address override** for all Audio Loom components in the **current world**; exports also list **resolved OSC paths** for planning triggers (see [CSV routing](#csv-routing-importexport) below)
 - **Sound** — Assign sounds directly in the table (click, drag-drop, or “Use Selected” from the Content Browser)
 - **Device** — Dropdown of output devices
 - **Channel** — Output channel per component
@@ -191,8 +191,16 @@ Use **Export CSV** to write a UTF-8 file (comma-separated, quoted fields when ne
 | `SoundWave` | Asset path (e.g. `/Game/Audio/MySound.MySound`) or empty |
 | `DeviceId` | OS device id string, or empty for **default output** |
 | `OutputChannel` | Integer; `0` = all channels |
+| `OscAddress` | *(Optional on import; included on export.)* **Override** for the OSC base path (same as the Details field). Empty = default from **hierarchy root instance label** + component index (`GetOscAddress()`). **Import** updates this column only if the header includes `OscAddress` **and** the row has enough fields for that column — short rows leave existing overrides unchanged. Invalid non-empty values log a warning and **routing still applies**; OSC override for that row is skipped. |
+| `OscBase` | *(Export only, informational.)* Resolved base path after overrides — what the subsystem uses for registry keys. |
+| `OscPlay` | *(Export only.)* Full OSC path for **play** (`<OscBase>/play`). |
+| `OscStop` | *(Export only.)* Full OSC path for **stop** (`<OscBase>/stop`). |
+| `OscLoop` | *(Export only.)* Full OSC path for **loop** toggle (`<OscBase>/loop`). |
+| `OscState` | *(Export only.)* Full OSC path for **state** monitoring (`<OscBase>/state`). |
 
 **v1 CSV (older exports):** Six columns without `ComponentName` — `ActorName,ActorLabel,ComponentIndex,SoundWave,DeviceId,OutputChannel` — still import; matching uses `ComponentIndex` only.
+
+**v2 without OSC columns:** Seven routing columns (with `ComponentName`) import as before; OSC fields are optional.
 
 **Matching:** Import finds an actor whose **name** equals `ActorName` and, if `ActorLabel` is not empty in the row, whose **label** equals `ActorLabel`. If more than one actor matches (e.g. duplicate names across sublevels), the row is skipped with a warning — give actors **unique labels** and include `ActorLabel` in the CSV.
 
@@ -217,7 +225,7 @@ Use **Export CSV** to write a UTF-8 file (comma-separated, quoted fields when ne
 
 ### Address Format
 
-Each component has a **base** address (e.g. `/audioloom/MyActor/0`). Commands use suffixes:
+Each component has a **base** address (e.g. `/audioloom/Mike/1`, `/audioloom/Mike/2` for multiple Audio Looms on the same actor), using the hierarchy root’s **Actor Label** (sanitized) and a **1-based** index when **OSC Address** is blank. Commands use suffixes:
 
 | Address | Action | Arguments |
 |---------|--------|-----------|
@@ -328,8 +336,8 @@ When a component starts or stops playing, AudioLoom sends:
 2. Open **Window → Audio Loom**. Set **Listen Port** (e.g. 9000) and click **Check Port**.
 3. Click **Start OSC** (the button turns green when running).
 4. From your external app (Max/MSP, TouchOSC, etc.), send to your machine’s IP and the listen port:
-   - `/audioloom/YourActorName/0/play` — start playback
-   - `/audioloom/YourActorName/0/stop` — stop playback
+   - `/audioloom/YourActorName/1/play` — start playback (1 = first Audio Loom on that actor)
+   - `/audioloom/YourActorName/1/stop` — stop playback
 
 ### D. Multi-channel speaker map
 

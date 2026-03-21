@@ -10,8 +10,92 @@
 #include "AudioLoomBlueprintLibrary.h"
 #include "AudioLoomOscSubsystem.h"
 #include "AudioLoomPlaybackBackend.h"
+#include "GameFramework/Actor.h"
 #include "Sound/SoundWave.h"
 #include "UObject/UnrealType.h"
+
+namespace
+{
+	/** One path segment from actor label (or internal name if label empty); safe for OSC 1.0 paths. */
+	static FString OscSanitizeInstanceSegment(const FString& Raw)
+	{
+		const FString S = Raw.TrimStartAndEnd();
+		if (S.IsEmpty())
+		{
+			return TEXT("unnamed");
+		}
+		FString Out;
+		Out.Reserve(S.Len());
+		for (int32 i = 0; i < S.Len(); ++i)
+		{
+			const TCHAR C = S[i];
+			if ((C >= TEXT('a') && C <= TEXT('z')) || (C >= TEXT('A') && C <= TEXT('Z')) || (C >= TEXT('0') && C <= TEXT('9')) || C == TEXT('_') || C == TEXT('-'))
+			{
+				Out += C;
+			}
+			else if (FChar::IsWhitespace(C))
+			{
+				Out += TEXT('_');
+			}
+			else
+			{
+				Out += TEXT('_');
+			}
+		}
+		while (Out.Len() > 0 && Out[0] == TEXT('_'))
+		{
+			Out.RemoveAt(0);
+		}
+		while (Out.Len() > 0 && Out[Out.Len() - 1] == TEXT('_'))
+		{
+			Out.RemoveAt(Out.Len() - 1);
+		}
+		return Out.IsEmpty() ? TEXT("unnamed") : Out;
+	}
+
+	static FString DefaultOscSegmentForActor(AActor* NameActor)
+	{
+		if (!NameActor)
+		{
+			return TEXT("unnamed");
+		}
+		const FString Label = NameActor->GetActorLabel().TrimStartAndEnd();
+		if (!Label.IsEmpty())
+		{
+			return OscSanitizeInstanceSegment(Label);
+		}
+		return OscSanitizeInstanceSegment(NameActor->GetName());
+	}
+} // namespace
+
+AActor* UAudioLoomComponent::GetOscHierarchyRootForActor(AActor* Start)
+{
+	if (!Start)
+	{
+		return nullptr;
+	}
+	AActor* Current = Start;
+	for (int32 Depth = 0; Depth < 64; ++Depth)
+	{
+		if (AActor* AttachParent = Current->GetAttachParentActor())
+		{
+			Current = AttachParent;
+			continue;
+		}
+		if (AActor* ParentActor = Current->GetParentActor())
+		{
+			Current = ParentActor;
+			continue;
+		}
+		break;
+	}
+	return Current;
+}
+
+FString UAudioLoomComponent::GetOscDefaultInstanceSegmentForHierarchyRoot(AActor* RootActor)
+{
+	return DefaultOscSegmentForActor(RootActor);
+}
 
 UAudioLoomComponent::UAudioLoomComponent()
 {
@@ -219,10 +303,17 @@ FString UAudioLoomComponent::GetOscAddress() const
 	}
 	AActor* Owner = GetOwner();
 	if (!Owner) return TEXT("/audioloom/unnamed");
+	AActor* NameActor = GetOscHierarchyRootForActor(Owner);
+	if (!NameActor)
+	{
+		NameActor = Owner;
+	}
 	TArray<UAudioLoomComponent*> Comps;
 	Owner->GetComponents(Comps);              // order matches editor “array of components”
-	int32 Idx = Comps.IndexOfByKey(this);     // stable index for default path
-	return FString::Printf(TEXT("/audioloom/%s/%d"), *Owner->GetName(), FMath::Max(0, Idx));
+	const int32 Idx = Comps.IndexOfByKey(this); // stable index for default path (0-based)
+	const int32 OneBased = (Idx >= 0) ? (Idx + 1) : 1;
+	const FString InstanceSeg = DefaultOscSegmentForActor(NameActor);
+	return FString::Printf(TEXT("/audioloom/%s/%d"), *InstanceSeg, OneBased);
 }
 
 bool UAudioLoomComponent::SetOscAddress(const FString& InAddress)

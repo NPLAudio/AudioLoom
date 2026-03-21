@@ -25,6 +25,7 @@
 #include "AudioLoomComponent.generated.h"
 
 class USoundWave;
+class AActor;
 
 /**
  * Routes decoded PCM to a specific audio output device and channel (Windows/macOS).
@@ -99,7 +100,9 @@ public:
 	float ReplayDelayMax = 3.0f;
 
 	/**
-	 * Base OSC address for this component (e.g. /audioloom/1).
+	 * Base OSC address for this component (e.g. /audioloom/1). When empty, default uses the
+	 * hierarchy root actor’s **instance label** (`AActor::GetActorLabel()`), sanitized for OSC;
+	 * if the label is empty, falls back to the internal actor name.
 	 * Empty = use default derived from owner and component index.
 	 * Play=/base/play, Stop=/base/stop, Loop=/base/loop. Validate override per OSC spec.
 	 */
@@ -134,6 +137,17 @@ public:
 	/** Set OSC address. Validates format. Returns true if valid and set. */
 	UFUNCTION(BlueprintCallable, Category = "AudioLoom|OSC", meta = (DisplayName = "Set OSC Address"))
 	bool SetOscAddress(const FString& InAddress);
+
+	/**
+	 * Walks attach parent then parent-actor chain (same rule as default OSC path).
+	 * Used by the editor to detect duplicate Actor Labels across hierarchy roots.
+	 */
+	static AActor* GetOscHierarchyRootForActor(AActor* Start);
+
+	/**
+	 * Sanitized instance segment for default OSC (/audioloom/<segment>/1) when RootActor is the hierarchy root.
+	 */
+	static FString GetOscDefaultInstanceSegmentForHierarchyRoot(AActor* RootActor);
 
 	// --- Blueprint: routing mirrors (optional; UPROPERTY already exposes same fields) ---
 	/** Get device ID. */

@@ -41,6 +41,8 @@ private:
 	UWorld* GetCurrentWorld() const;
 	/** Full scan of actors → `UAudioLoomComponent`; refreshes `CachedDevices` for row dropdowns. */
 	void RebuildComponentList();
+	/** Warn when two hierarchy roots share the same sanitized Actor Label (default OSC collision). */
+	void UpdateDuplicateLabelWarning();
 	/** Cheap count/validity check vs `ComponentList` to detect spawn/destroy without polling every property. */
 	bool HasComponentListChanged() const;
 	/** Periodic: list churn + OSC registry refresh when server is up. */
@@ -70,6 +72,9 @@ private:
 	FReply OnStartStopOscClicked();
 
 	TSharedPtr<STextBlock> PortStatusText;
+	/** Shown when duplicate Actor Labels map to the same default OSC segment. */
+	FText OscDuplicateLabelWarning;
+	TSharedPtr<STextBlock> DuplicateLabelWarningText;
 
 	FDelegateHandle PostPIEStartedHandle;
 	FDelegateHandle EndPIEHandle;

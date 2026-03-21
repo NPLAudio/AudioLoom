@@ -52,8 +52,6 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 	// Frequent enough to rebind editor ↔ PIE when delegate timing misses (same component count would skip rebuild).
 	RegisterActiveTimer(0.25f, FWidgetActiveTimerDelegate::CreateSP(this, &SAudioLoomPanel::OnRefreshTimer));
 
-	RebuildComponentList(); // initial population before first paint
-
 	ChildSlot
 	[
 		SNew(SBorder)
@@ -103,6 +101,22 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 					.OnClicked(this, &SAudioLoomPanel::OnImportCsvClicked)
 					.ToolTipText(LOCTEXT("ImportCsvTip", "Apply routing from a CSV (matches actor name, optional label, component index). Save the level to persist in editor."))
 				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.f, 0.f, 0.f, 8.f)
+			[
+				SAssignNew(DuplicateLabelWarningText, STextBlock)
+				.AutoWrapText(true)
+				.Font(FAppStyle::GetFontStyle("SmallFont"))
+				.ColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.45f, 0.15f)))
+				.Visibility_Lambda([this]()
+				{
+					return OscDuplicateLabelWarning.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
+				})
+				.Text_Lambda([this]() { return OscDuplicateLabelWarning; })
+				.ToolTipText(LOCTEXT("DupLabelTip", "Default OSC paths use each actor’s Instance / Actor Label (sanitized). Two different roots with the same label produce the same /audioloom/<name>/1 paths — rename one actor or set a custom OSC Address."))
 			]
 
 			// OSC section
@@ -243,7 +257,7 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 						[
 							SNew(STextBlock)
 							.Text(LOCTEXT("OscCommandsBody",
-								"Each component has a base OSC address (e.g. /audioloom/1). Send messages to these addresses:\n\n"
+								"Each component has a base OSC address (e.g. /audioloom/Mike/1 — instance label + 1-based index). Actor Labels must be unique per hierarchy root for defaults. Send messages to these addresses:\n\n"
 								"• /base/play  — Start playback. Args: float ≥0.5, int ≥1, or none.\n"
 								"• /base/stop  — Stop playback. Any message triggers stop.\n"
 								"• /base/loop  — Set loop on/off. 1 = loop, 0 = no loop.\n\n"
@@ -287,6 +301,9 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 			]
 		]
 	];
+
+	RebuildComponentList(); // initial population after ListView exists
+	UpdateDuplicateLabelWarning();
 }
 
 SAudioLoomPanel::~SAudioLoomPanel()
@@ -342,6 +359,83 @@ void SAudioLoomPanel::RebuildComponentList()
 	{
 		ListView->RequestListRefresh();
 	}
+	UpdateDuplicateLabelWarning();
+}
+
+void SAudioLoomPanel::UpdateDuplicateLabelWarning()
+{
+	UWorld* World = GetCurrentWorld();
+	if (!World)
+	{
+		OscDuplicateLabelWarning = FText::GetEmpty();
+		if (DuplicateLabelWarningText.IsValid())
+		{
+			DuplicateLabelWarningText->Invalidate(EInvalidateWidgetReason::Layout);
+		}
+		return;
+	}
+
+	TMap<FString, TArray<AActor*>> SegToRoots;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		TArray<UAudioLoomComponent*> Comps;
+		It->GetComponents(Comps);
+		for (UAudioLoomComponent* Comp : Comps)
+		{
+			if (!IsValid(Comp))
+			{
+				continue;
+			}
+			AActor* Owner = Comp->GetOwner();
+			if (!Owner)
+			{
+				continue;
+			}
+			AActor* Root = UAudioLoomComponent::GetOscHierarchyRootForActor(Owner);
+			if (!Root)
+			{
+				Root = Owner;
+			}
+			const FString Seg = UAudioLoomComponent::GetOscDefaultInstanceSegmentForHierarchyRoot(Root);
+			SegToRoots.FindOrAdd(Seg).AddUnique(Root);
+		}
+	}
+
+	TArray<FString> DupeSegments;
+	for (const TPair<FString, TArray<AActor*>>& Pair : SegToRoots)
+	{
+		if (Pair.Value.Num() > 1)
+		{
+			DupeSegments.Add(Pair.Key);
+		}
+	}
+	DupeSegments.Sort();
+
+	if (DupeSegments.Num() == 0)
+	{
+		OscDuplicateLabelWarning = FText::GetEmpty();
+	}
+	else
+	{
+		FString Joined;
+		for (int32 i = 0; i < DupeSegments.Num(); ++i)
+		{
+			if (i > 0)
+			{
+				Joined += TEXT(", ");
+			}
+			Joined += DupeSegments[i];
+		}
+		OscDuplicateLabelWarning = FText::Format(
+			LOCTEXT("DupOscLabelFmt",
+				"Warning: duplicate Actor Labels for default OSC ({0}). Each instance name must be unique — rename actors or set a custom OSC Address."),
+			FText::FromString(Joined));
+	}
+
+	if (DuplicateLabelWarningText.IsValid())
+	{
+		DuplicateLabelWarningText->Invalidate(EInvalidateWidgetReason::Layout);
+	}
 }
 
 bool SAudioLoomPanel::HasComponentListChanged() const
@@ -380,6 +474,7 @@ EActiveTimerReturnType SAudioLoomPanel::OnRefreshTimer(double InCurrentTime, flo
 	{
 		RebuildComponentList();
 	}
+	UpdateDuplicateLabelWarning();
 	UWorld* World = GetCurrentWorld();
 	if (World)
 	{

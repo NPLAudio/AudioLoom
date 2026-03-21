@@ -596,6 +596,25 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 						]
 					]
 
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.f, 0.f, 0.f, 4.f)
+					[
+						SNew(STextBlock)
+						.AutoWrapText(true)
+						.Font(FAppStyle::GetFontStyle("SmallFont"))
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.Text_Lambda([WeakComp]()
+						{
+							if (!WeakComp.IsValid()) return FText::GetEmpty();
+							const FString Base = WeakComp->GetOscAddress();
+							return FText::FromString(FString::Printf(
+								TEXT("OSC: %s/play  %s/stop  %s/loop  %s/state"),
+								*Base, *Base, *Base, *Base));
+						})
+						.ToolTipText(LOCTEXT("OscTriggersTip", "Resolved OSC paths for this component (for planning / external tools)."))
+					]
+
 					// Transport — same as Details “Preview” row (editor-time hardware playback)
 					+ SVerticalBox::Slot()
 					.AutoHeight()
