@@ -38,6 +38,12 @@ public:
 	/** Whether currently playing. */
 	bool IsPlaying() const;
 
+	/**
+	 * Estimated output path latency (ms) from the last started stream, or 0 if not playing / unknown.
+	 * Safe to call from game thread; value is set on the playback thread after the device stream initializes.
+	 */
+	float GetOutputLatencyMs() const;
+
 private:
 	TUniquePtr<FAudioLoomPlaybackBackendImpl> Impl; // platform impl defined only in .cpp (Windows + Mac types differ)
 };

@@ -13,9 +13,12 @@
 #include "CoreMinimal.h"
 #include "AudioOutputDeviceInfo.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Widgets/SWidget.h"
 
 class UAudioLoomComponent;
 class SAudioLoomPanel;
+class SBorder;
+class STextBlock;
 
 /**
  * Expandable row: header (actor / playing / sound) + body (full editor controls).
@@ -33,7 +36,15 @@ public:
 	void Construct(const FArguments& InArgs);
 
 private:
+	/** ~10 Hz: refresh header playing status + output latency + body editor FPS (single timer). */
+	EActiveTimerReturnType UpdateLiveReadouts(double InCurrentTime, float InDeltaTime);
+
 	TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>> Item; // list view item; shared for Slate identity
 	const TArray<FAudioOutputDeviceInfo>* Devices = nullptr; // points at panel’s CachedDevices (do not copy)
 	TWeakPtr<SAudioLoomPanel> Panel; // avoid circular shared_ptr with parent panel
+
+	TSharedPtr<SBorder> HeaderActivityLight;
+	TSharedPtr<STextBlock> HeaderStatusText;
+	TSharedPtr<STextBlock> HeaderLatencyText;
+	TSharedPtr<STextBlock> EditorPerfText;
 };

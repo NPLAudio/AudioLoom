@@ -119,6 +119,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AudioLoom")
 	bool IsPlaying() const;
 
+	/** Estimated OS output buffer / stream latency (ms), or 0 when not playing. Not full round-trip I/O latency. */
+	UFUNCTION(BlueprintPure, Category = "AudioLoom|Diagnostics")
+	float GetOutputLatencyMs() const;
+
 	UFUNCTION(BlueprintPure, Category = "AudioLoom")
 	bool GetLoop() const { return bLoop; }
 

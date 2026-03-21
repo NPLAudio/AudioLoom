@@ -162,6 +162,18 @@ Central panel for:
 - **Loop** / **Begin** — Toggles for each component
 - **Play** / **Stop** — Buttons per row
 - **Select** — Select the actor in the viewport
+- **Out: _ms_** (row header) — Estimated **OS output buffer / stream latency** while playing (Windows: `IAudioClient::GetStreamLatency` when available, else buffer duration; macOS: device buffer frame size ÷ nominal sample rate). This is **not** full round-trip input→output latency; decoding/resample cost is usually tiny compared to the device buffer.
+- **Editor:** (expanded row body) — Live **Slate/editor FPS** and average frame time. This is **not** the DAC buffer number in the header; it reflects how busy the editor/PIE UI thread is. Very low FPS can make these labels update less smoothly; it does not change the OS-reported audio buffer latency while a stream is running.
+
+**Performance tips (latency vs CPU):**
+
+| Topic | Tip |
+|--------|-----|
+| **Windows low latency** | Enable **Low Latency Mode** (exclusive) and set **Buffer (ms)** to a stable value (often **3–10 ms**); unsupported devices fall back to shared mode with a larger typical buffer. |
+| **Shared mode** | Larger buffers (~tens of ms) — higher latency, more headroom. |
+| **Resampling** | AudioLoom resamples non-48 kHz sources to 48 kHz; **export WAV at 48 kHz** when possible. |
+| **Editor vs packaged** | The editor can be CPU-heavy; **packaged builds** are fairer for overall performance testing, but **output buffer latency** is still dominated by OS/device settings, not Unreal FPS. |
+| **Devices** | Prefer a **dedicated interface** with stable drivers; virtual cables often add buffering. |
 
 ### OSC Section (top of panel)
 
@@ -220,6 +232,12 @@ When a component starts or stops playing, AudioLoom sends:
 | `IsPlaying` | Returns true if currently playing |
 | `Set Loop` | Turn loop on/off |
 | `Get Loop` | Current loop state |
+
+### Diagnostics
+
+| Node | Description |
+|------|-------------|
+| `Get Output Latency Ms` | Estimated OS output buffer / stream latency (ms), or 0 when not playing |
 
 ### Routing
 

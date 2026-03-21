@@ -37,7 +37,12 @@
 
 void SAudioLoomPanel::Construct(const FArguments& InArgs)
 {
-	RegisterActiveTimer(2.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SAudioLoomPanel::OnRefreshTimer)); // seconds; keeps list/OSC map fresh
+	// After BeginPlay in PIE — rebind rows to PlayWorld components (IsPlaying / audio run on duplicates).
+	PostPIEStartedHandle = FEditorDelegates::PostPIEStarted.AddSP(this, &SAudioLoomPanel::OnPIEWorldChanged);
+	EndPIEHandle = FEditorDelegates::EndPIE.AddSP(this, &SAudioLoomPanel::OnPIEWorldChanged);
+
+	// Frequent enough to rebind editor ↔ PIE when delegate timing misses (same component count would skip rebuild).
+	RegisterActiveTimer(0.25f, FWidgetActiveTimerDelegate::CreateSP(this, &SAudioLoomPanel::OnRefreshTimer));
 
 	RebuildComponentList(); // initial population before first paint
 
@@ -257,6 +262,23 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 	];
 }
 
+SAudioLoomPanel::~SAudioLoomPanel()
+{
+	if (PostPIEStartedHandle.IsValid())
+	{
+		FEditorDelegates::PostPIEStarted.Remove(PostPIEStartedHandle);
+	}
+	if (EndPIEHandle.IsValid())
+	{
+		FEditorDelegates::EndPIE.Remove(EndPIEHandle);
+	}
+}
+
+void SAudioLoomPanel::OnPIEWorldChanged(bool /*bArg*/)
+{
+	RebuildComponentList();
+}
+
 UWorld* SAudioLoomPanel::GetCurrentWorld() const
 {
 	if (!GEditor) return nullptr;
@@ -272,6 +294,7 @@ void SAudioLoomPanel::RebuildComponentList()
 	CachedDevices = FAudioOutputDeviceEnumerator::GetOutputDevices(); // one OS call; shared by all rows
 
 	UWorld* World = GetCurrentWorld();
+	ComponentListWorld = World;
 	if (!World) return;
 
 	for (TActorIterator<AActor> It(World); It; ++It) // every actor — components can live on any of them
@@ -297,6 +320,11 @@ void SAudioLoomPanel::RebuildComponentList()
 bool SAudioLoomPanel::HasComponentListChanged() const
 {
 	UWorld* World = GetCurrentWorld();
+	// PIE/simulate uses PlayWorld; list must track the same UAudioLoomComponent instances that receive BeginPlay/Play().
+	if (World != ComponentListWorld.Get())
+	{
+		return true;
+	}
 	if (!World) return false;
 
 	int32 Count = 0;

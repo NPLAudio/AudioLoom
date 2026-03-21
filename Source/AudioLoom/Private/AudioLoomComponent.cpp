@@ -196,6 +196,15 @@ bool UAudioLoomComponent::IsPlaying() const
 #endif
 }
 
+float UAudioLoomComponent::GetOutputLatencyMs() const
+{
+#if PLATFORM_WINDOWS || PLATFORM_MAC
+	return AudioBackend ? AudioBackend->GetOutputLatencyMs() : 0.f;
+#else
+	return 0.f;
+#endif
+}
+
 void UAudioLoomComponent::SetLoop(bool bInLoop)
 {
 	bLoop = bInLoop; // next Start() picks this up; if already playing, loop flag is in backend — restart play to apply

@@ -19,11 +19,12 @@
 
 #include "AudioLoomPlaybackBackend.h"
 
+#include <atomic>
+
 #if PLATFORM_MAC
 #include <CoreAudio/CoreAudio.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <thread>
-#include <atomic>
 #endif
 
 #if PLATFORM_WINDOWS
@@ -31,7 +32,6 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <thread>
-#include <atomic>
 #include "Windows/HideWindowsPlatformTypes.h"
 
 #pragma comment(lib, "ole32.lib")
@@ -47,6 +47,8 @@ public:
 	std::atomic<bool> bStopRequested{false};
 	std::atomic<bool> bPlaying{false};
 	std::atomic<bool> bLoop{false};
+	/** OS-reported / buffer-derived output latency (ms); written after stream init, cleared when thread exits. */
+	std::atomic<float> OutputLatencyMs{0.f};
 	TArray<float> PCMCopy;
 	int32 SourceChannels = 1;
 	int32 OutputChannel = 0;  // 0 = all channels
@@ -57,6 +59,7 @@ public:
 
 	void RunPlayback()
 	{
+		OutputLatencyMs.store(0.f, std::memory_order_relaxed);
 		CoInitializeEx(nullptr, COINIT_MULTITHREADED); // this thread owns COM for device/audio calls
 
 		IMMDeviceEnumerator* pEnumerator = nullptr;
@@ -197,10 +200,22 @@ public:
 
 		UINT32 BufferFrameCount = 0;
 		pAudioClient->GetBufferSize(&BufferFrameCount);
+		{
+			const int32 SR = FMath::Max(1, (int32)pwfx->nSamplesPerSec);
+			const float BufferDurationMs = BufferFrameCount * 1000.f / float(SR);
+			REFERENCE_TIME hnsLatency = 0;
+			float LatMs = BufferDurationMs;
+			if (SUCCEEDED(pAudioClient->GetStreamLatency(&hnsLatency)))
+			{
+				LatMs = static_cast<float>(hnsLatency / 10000.0); // REFERENCE_TIME is 100-ns units
+			}
+			OutputLatencyMs.store(FMath::Max(0.f, LatMs), std::memory_order_relaxed);
+		}
 
 		hr = pAudioClient->GetService(__uuidof(IAudioRenderClient), (void**)&pRenderClient);
 		if (FAILED(hr) || !pRenderClient)
 		{
+			OutputLatencyMs.store(0.f, std::memory_order_relaxed);
 			CoTaskMemFree(pwfx);
 			pAudioClient->Release();
 			CoUninitialize();
@@ -219,6 +234,7 @@ public:
 		const int64 TotalFrames = PCMCopy.Num() / FMath::Max(1, SourceChannels);
 		if (TotalFrames <= 0)
 		{
+			OutputLatencyMs.store(0.f, std::memory_order_relaxed);
 			CoTaskMemFree(pwfx);
 			pRenderClient->Release();
 			pAudioClient->Release();
@@ -357,6 +373,7 @@ public:
 		pRenderClient->Release();
 		pAudioClient->Release();
 		CoUninitialize();
+		OutputLatencyMs.store(0.f, std::memory_order_relaxed);
 		bPlaying = false;
 	}
 };
@@ -460,10 +477,12 @@ public:
 	FString DeviceId;
 	bool bExclusive = false;     // Unused on Mac; kept for Start() signature compatibility
 	int32 BufferSizeMs = 0;      // Unused on Mac; kept for Start() signature compatibility
+	std::atomic<float> OutputLatencyMs{0.f};
 	std::thread PlaybackThread;
 
 	void RunPlayback()
 	{
+		OutputLatencyMs.store(0.f, std::memory_order_relaxed);
 		AudioDeviceID DevID = kAudioObjectUnknown;
 		// Default route: system’s current output device (same idea as Windows default endpoint)
 		AudioObjectPropertyAddress Addr = {
@@ -557,6 +576,33 @@ public:
 		Err = AudioDeviceStart(DevID, ProcID);
 		if (Err != noErr) { AudioDeviceDestroyIOProcID(DevID, ProcID); bPlaying = false; return; }
 
+		{
+			AudioObjectPropertyAddress BufAddr = {
+				kAudioDevicePropertyBufferFrameSize,
+				kAudioDevicePropertyScopeOutput,
+				kAudioObjectPropertyElementMain
+			};
+			UInt32 BufFrames = 512;
+			UInt32 BufSz = sizeof(BufFrames);
+			if (AudioObjectGetPropertyData(DevID, &BufAddr, 0, nullptr, &BufSz, &BufFrames) != noErr)
+			{
+				BufFrames = 512;
+			}
+			AudioObjectPropertyAddress RateAddr = {
+				kAudioDevicePropertyNominalSampleRate,
+				kAudioObjectPropertyScopeGlobal,
+				kAudioObjectPropertyElementMain
+			};
+			Float64 SampleRate = 48000.0;
+			UInt32 RateSz = sizeof(SampleRate);
+			if (AudioObjectGetPropertyData(DevID, &RateAddr, 0, nullptr, &RateSz, &SampleRate) != noErr)
+			{
+				SampleRate = 48000.0;
+			}
+			const float LatMs = static_cast<float>((double)BufFrames / FMath::Max(1.0, SampleRate) * 1000.0);
+			OutputLatencyMs.store(FMath::Max(0.f, LatMs), std::memory_order_relaxed);
+		}
+
 		// Mac: real work is in MacIOProc; this thread only waits for stop or end-of-file
 		while (!bStopRequested)
 		{
@@ -567,6 +613,7 @@ public:
 		std::this_thread::sleep_for(std::chrono::milliseconds(50)); // let last buffers drain
 		AudioDeviceStop(DevID, ProcID);
 		AudioDeviceDestroyIOProcID(DevID, ProcID);
+		OutputLatencyMs.store(0.f, std::memory_order_relaxed);
 		bPlaying = false;
 	}
 };
@@ -613,6 +660,7 @@ void FAudioLoomPlaybackBackend::Stop()
 	{
 		Impl->PlaybackThread.join(); // blocks until thread exits and sets bPlaying false
 	}
+	Impl->OutputLatencyMs.store(0.f, std::memory_order_relaxed);
 #endif
 }
 
@@ -622,5 +670,15 @@ bool FAudioLoomPlaybackBackend::IsPlaying() const
 	return Impl && Impl->bPlaying;
 #else
 	return false;
+#endif
+}
+
+float FAudioLoomPlaybackBackend::GetOutputLatencyMs() const
+{
+#if PLATFORM_WINDOWS || PLATFORM_MAC
+	if (!Impl) return 0.f;
+	return Impl->OutputLatencyMs.load(std::memory_order_relaxed);
+#else
+	return 0.f;
 #endif
 }

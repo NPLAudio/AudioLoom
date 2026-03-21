@@ -13,13 +13,16 @@
 #include "AudioOutputDeviceInfo.h"
 
 #include "Editor.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "Misc/App.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -93,22 +96,53 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
+				.Padding(0.f, 0.f, 6.f, 0.f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(SBox)
+					.WidthOverride(10.f)
+					.HeightOverride(10.f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(HeaderActivityLight, SBorder)
+						.Padding(0.f)
+						.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor(FSlateColor(FLinearColor(0.12f, 0.12f, 0.12f, 1.f)))
+						.ToolTipText(LOCTEXT("ActivityLightTip", "Output activity: lit when this component is playing audio. In PIE, the list must track the play world (see panel refresh)."))
+					]
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.f, 0.f, 4.f, 0.f)
+				.VAlign(VAlign_Center)
+				[
+					// Driven by RegisterActiveTimer (UpdateLiveReadouts): lambdas alone do not repaint when
+					// playback starts from Begin Play / PIE — IsPlaying() would stay stale until user input.
+					SAssignNew(HeaderStatusText, STextBlock)
+					.Text(LOCTEXT("StatusStopped", "Stopped"))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.Font(FAppStyle::GetFontStyle("SmallFont"))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
 				.Padding(0.f, 0.f, 4.f, 0.f)
 				.VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
-					.Text_Lambda([WeakComp]()
-					{
-						if (!WeakComp.IsValid()) return LOCTEXT("StatusUnknown", "—");
-						return WeakComp->IsPlaying() ? LOCTEXT("StatusPlaying", "Playing") : LOCTEXT("StatusStopped", "Stopped");
-					})
-					.ColorAndOpacity_Lambda([WeakComp]()
-					{
-						return WeakComp.IsValid() && WeakComp->IsPlaying()
-							? FSlateColor(FLinearColor(0.2f, 1.f, 0.3f))
-							: FSlateColor::UseSubduedForeground();
-					})
+					.Text(FText::FromString(TEXT(" | ")))
 					.Font(FAppStyle::GetFontStyle("SmallFont"))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.f, 0.f, 4.f, 0.f)
+				.VAlign(VAlign_Center)
+				[
+					SAssignNew(HeaderLatencyText, STextBlock)
+					.Text(FText::FromString(TEXT("—")))
+					.Font(FAppStyle::GetFontStyle("SmallFont"))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.ToolTipText(LOCTEXT("OutputLatencyTip", "Estimated OS output buffer / stream latency (ms). Not full round-trip input→output delay; see README."))
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
@@ -145,6 +179,34 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 				.Padding(8.f)
 				[
 					SNew(SVerticalBox)
+
+					// Editor FPS / frame time (expanded body only; not DAC buffer latency)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.f, 0.f, 0.f, 6.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.f, 0.f, 6.f, 0.f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("EditorPerfLabel", "Editor:"))
+							.Font(FAppStyle::GetFontStyle("SmallFont"))
+							.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SAssignNew(EditorPerfText, STextBlock)
+							.Text(FText::FromString(TEXT("—")))
+							.Font(FAppStyle::GetFontStyle("SmallFont"))
+							.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+							.ToolTipText(LOCTEXT("EditorPerfTip", "Slate/editor frame budget (FPS and average frame time). This is not the same as output buffer latency in the row header; low FPS can make these labels update less smoothly."))
+						]
+					]
 
 					// Sound picker — same asset path string as Details panel object reference
 					+ SVerticalBox::Slot()
@@ -567,6 +629,78 @@ void SAudioLoomExpandableRow::Construct(const FArguments& InArgs)
 			]
 		]
 	];
+
+	// UE 5.7: two-arg RegisterActiveTimer (tick period + delegate); updates header status/latency + body editor FPS.
+	RegisterActiveTimer(0.1f, FWidgetActiveTimerDelegate::CreateSP(this, &SAudioLoomExpandableRow::UpdateLiveReadouts));
+	// Sync immediately so status/latency match Begin Play / PIE without waiting for first tick.
+	UpdateLiveReadouts(0.0, 0.0f);
+}
+
+EActiveTimerReturnType SAudioLoomExpandableRow::UpdateLiveReadouts(double InCurrentTime, float InDeltaTime)
+{
+	UAudioLoomComponent* const Comp = Item.IsValid() && Item->IsValid() ? Item->Get() : nullptr;
+
+	if (HeaderActivityLight.IsValid())
+	{
+		const bool bActive = Comp && Comp->IsPlaying();
+		HeaderActivityLight->SetBorderBackgroundColor(FSlateColor(
+			bActive ? FLinearColor(0.1f, 0.92f, 0.3f, 1.f) : FLinearColor(0.11f, 0.11f, 0.11f, 1.f)));
+	}
+
+	if (HeaderStatusText.IsValid())
+	{
+		if (!Comp)
+		{
+			HeaderStatusText->SetText(LOCTEXT("StatusUnknown", "—"));
+			HeaderStatusText->SetColorAndOpacity(FSlateColor::UseSubduedForeground());
+		}
+		else if (Comp->IsPlaying())
+		{
+			HeaderStatusText->SetText(LOCTEXT("StatusPlaying", "Playing"));
+			HeaderStatusText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 1.f, 0.3f)));
+		}
+		else
+		{
+			HeaderStatusText->SetText(LOCTEXT("StatusStopped", "Stopped"));
+			HeaderStatusText->SetColorAndOpacity(FSlateColor::UseSubduedForeground());
+		}
+	}
+
+	if (HeaderLatencyText.IsValid())
+	{
+		if (Comp && Comp->IsPlaying())
+		{
+			const float Ms = Comp->GetOutputLatencyMs();
+			HeaderLatencyText->SetText(FText::FromString(FString::Printf(TEXT("Out: %.1f ms"), Ms)));
+		}
+		else
+		{
+			HeaderLatencyText->SetText(FText::FromString(TEXT("—")));
+		}
+	}
+	if (EditorPerfText.IsValid())
+	{
+		float AvgDelta = 0.f;
+		if (FSlateApplication::IsInitialized())
+		{
+			AvgDelta = FSlateApplication::Get().GetAverageDeltaTime();
+		}
+		if (AvgDelta <= KINDA_SMALL_NUMBER)
+		{
+			AvgDelta = FApp::GetDeltaTime();
+		}
+		if (AvgDelta > KINDA_SMALL_NUMBER)
+		{
+			const float FPS = 1.f / AvgDelta;
+			const float FrameMs = AvgDelta * 1000.f;
+			EditorPerfText->SetText(FText::FromString(FString::Printf(TEXT("~%.0f FPS (%.1f ms)"), FPS, FrameMs)));
+		}
+		else
+		{
+			EditorPerfText->SetText(FText::FromString(TEXT("—")));
+		}
+	}
+	return EActiveTimerReturnType::Continue;
 }
 
 #undef LOCTEXT_NAMESPACE

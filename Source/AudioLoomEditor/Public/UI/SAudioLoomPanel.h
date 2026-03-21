@@ -15,6 +15,7 @@
 
 #include "CoreMinimal.h"
 #include "AudioOutputDeviceInfo.h"
+#include "Delegates/Delegate.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Views/SListView.h"
 
@@ -33,6 +34,7 @@ public:
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
+	virtual ~SAudioLoomPanel() override;
 
 private:
 	/** Editor world or `GEditor->PlayWorld` when PIE is active — same world the list enumerates. */
@@ -43,6 +45,8 @@ private:
 	bool HasComponentListChanged() const;
 	/** Periodic: list churn + OSC registry refresh when server is up. */
 	EActiveTimerReturnType OnRefreshTimer(double InCurrentTime, float InDeltaTime);
+	/** Rebind list to PlayWorld / editor world when PIE starts or stops. */
+	void OnPIEWorldChanged(bool bArg);
 	FReply OnRefreshClicked();
 
 	TArray<TWeakObjectPtr<UAudioLoomComponent>> ComponentList;
@@ -51,6 +55,8 @@ private:
 	TSharedPtr<SListView<TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>>>> ListView;
 	/** Snapshot from `FAudioOutputDeviceEnumerator::GetOutputDevices` for device name resolution in rows. */
 	TArray<FAudioOutputDeviceInfo> CachedDevices;
+	/** World used when `ComponentList` was last built — must match `GetCurrentWorld()` (editor vs PIE). */
+	TWeakObjectPtr<UWorld> ComponentListWorld;
 
 	TSharedRef<ITableRow> GenerateRow(
 		TSharedPtr<TWeakObjectPtr<UAudioLoomComponent>> Item,
@@ -62,4 +68,7 @@ private:
 	FReply OnStartStopOscClicked();
 
 	TSharedPtr<STextBlock> PortStatusText;
+
+	FDelegateHandle PostPIEStartedHandle;
+	FDelegateHandle EndPIEHandle;
 };
