@@ -30,6 +30,7 @@ public class AudioLoomEditor : ModuleRules
 			"LevelEditor",         // GEditor, selection, viewport focus
 			"WorkspaceMenuStructure",
 			"EditorSubsystem",
+			"DesktopPlatform",
 		});
 	}
 }

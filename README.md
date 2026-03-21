@@ -153,6 +153,7 @@ Central panel for:
 
 - All `AudioLoomComponent` instances in the current level
 - **Refresh** — Update the list
+- **Export CSV** / **Import CSV** — Snapshot or apply **device**, **output channel**, and **sound asset path** for all Audio Loom components in the **current world** (see [CSV routing](#csv-routing-importexport) below)
 - **Sound** — Assign sounds directly in the table (click, drag-drop, or “Use Selected” from the Content Browser)
 - **Device** — Dropdown of output devices
 - **Channel** — Output channel per component
@@ -174,6 +175,28 @@ Central panel for:
 | **Resampling** | AudioLoom resamples non-48 kHz sources to 48 kHz; **export WAV at 48 kHz** when possible. |
 | **Editor vs packaged** | The editor can be CPU-heavy; **packaged builds** are fairer for overall performance testing, but **output buffer latency** is still dominated by OS/device settings, not Unreal FPS. |
 | **Devices** | Prefer a **dedicated interface** with stable drivers; virtual cables often add buffering. |
+
+### CSV routing import/export
+
+Use **Export CSV** to write a UTF-8 file (comma-separated, quoted fields when needed). Use **Import CSV** to apply routing from a file produced by this plugin or edited by hand.
+
+**Columns (header row, fixed order):**
+
+| Column | Description |
+|--------|-------------|
+| `ActorName` | Owner actor **name** (`AActor::GetName()`), e.g. `MyActor_C_0` |
+| `ActorLabel` | **Viewport label** (`AActor::GetActorLabel()`). If empty in the CSV, only `ActorName` is used for matching. If non-empty, both must match. |
+| `ComponentName` | **Unreal object name** of the component (`UAudioLoomComponent::GetName()`), e.g. `AudioLoomComponent_0` — unique per component on that actor. Use this to tell rows apart. **Import** matches by `ComponentName` when present. |
+| `ComponentIndex` | **Per-actor** index after sorting by component name (`0` = first in that sorted list). **Each actor’s first Audio Loom is `0`**, so **multiple rows in the file can all show `0` when they are different actors** (one component each). With the same actor and multiple Audio Loom components, indices are `0`, `1`, `2`, … |
+| `SoundWave` | Asset path (e.g. `/Game/Audio/MySound.MySound`) or empty |
+| `DeviceId` | OS device id string, or empty for **default output** |
+| `OutputChannel` | Integer; `0` = all channels |
+
+**v1 CSV (older exports):** Six columns without `ComponentName` — `ActorName,ActorLabel,ComponentIndex,SoundWave,DeviceId,OutputChannel` — still import; matching uses `ComponentIndex` only.
+
+**Matching:** Import finds an actor whose **name** equals `ActorName` and, if `ActorLabel` is not empty in the row, whose **label** equals `ActorLabel`. If more than one actor matches (e.g. duplicate names across sublevels), the row is skipped with a warning — give actors **unique labels** and include `ActorLabel` in the CSV.
+
+**Editor vs PIE:** The panel targets the **editor** or **PIE** world (same as the component list). Importing during **PIE** changes **PIE** instances; **save the level** in the editor to persist routing on placed actors.
 
 ### OSC Section (top of panel)
 

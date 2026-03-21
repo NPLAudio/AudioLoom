@@ -7,6 +7,7 @@
 
 #include "UI/SAudioLoomPanel.h"
 #include "UI/SAudioLoomExpandableRow.h"
+#include "AudioLoomRoutingCsv.h"
 #include "AudioLoomComponent.h"
 #include "AudioLoomBlueprintLibrary.h"
 #include "AudioLoomOscSubsystem.h"
@@ -16,6 +17,13 @@
 
 #include "Editor.h"
 #include "EngineUtils.h"
+#include "DesktopPlatformModule.h"
+#include "IDesktopPlatform.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Misc/FileHelper.h"
+#include "Misc/MessageDialog.h"
+#include "Misc/Paths.h"
+#include "Widgets/SWindow.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboButton.h"
@@ -70,11 +78,30 @@ void SAudioLoomPanel::Construct(const FArguments& InArgs)
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
+				.Padding(4.f, 0.f, 0.f, 0.f)
 				[
 					SNew(SButton)
 					.Text(LOCTEXT("Refresh", "Refresh"))
 					.OnClicked(this, &SAudioLoomPanel::OnRefreshClicked)
 					.ToolTipText(LOCTEXT("RefreshTip", "Refresh component list"))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(4.f, 0.f, 0.f, 0.f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("ExportCsv", "Export CSV"))
+					.OnClicked(this, &SAudioLoomPanel::OnExportCsvClicked)
+					.ToolTipText(LOCTEXT("ExportCsvTip", "Export device, channel, and sound path for all Audio Loom components in the current world"))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(4.f, 0.f, 0.f, 0.f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("ImportCsv", "Import CSV"))
+					.OnClicked(this, &SAudioLoomPanel::OnImportCsvClicked)
+					.ToolTipText(LOCTEXT("ImportCsvTip", "Apply routing from a CSV (matches actor name, optional label, component index). Save the level to persist in editor."))
 				]
 			]
 
@@ -371,6 +398,124 @@ EActiveTimerReturnType SAudioLoomPanel::OnRefreshTimer(double InCurrentTime, flo
 FReply SAudioLoomPanel::OnRefreshClicked()
 {
 	RebuildComponentList();
+	return FReply::Handled();
+}
+
+FReply SAudioLoomPanel::OnExportCsvClicked()
+{
+	IDesktopPlatform* const DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform)
+	{
+		return FReply::Handled();
+	}
+
+	UWorld* const World = GetCurrentWorld();
+	if (!World)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoWorldExport", "No world available for export."));
+		return FReply::Handled();
+	}
+
+	const void* ParentWindowHandle = nullptr;
+	if (const TSharedPtr<SWindow> Win = FSlateApplication::Get().FindBestParentWindowForDialogs(nullptr))
+	{
+		if (const TSharedPtr<FGenericWindow> NativeWindow = Win->GetNativeWindow())
+		{
+			ParentWindowHandle = NativeWindow->GetOSWindowHandle();
+		}
+	}
+
+	TArray<FString> OutFiles;
+	const FString DefaultPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir());
+	const bool bPicked = DesktopPlatform->SaveFileDialog(
+		ParentWindowHandle,
+		LOCTEXT("ExportCsvTitle", "Export Audio Loom routing CSV").ToString(),
+		DefaultPath,
+		TEXT("AudioLoom_routing.csv"),
+		TEXT("CSV files (*.csv)|*.csv"),
+		0,
+		OutFiles);
+
+	if (!bPicked || OutFiles.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	const FString Csv = FAudioLoomRoutingCsv::BuildRoutingCsv(World);
+	if (!FFileHelper::SaveStringToFile(Csv, *OutFiles[0], FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("ExportCsvWriteFailed", "Could not write the CSV file."));
+	}
+	return FReply::Handled();
+}
+
+FReply SAudioLoomPanel::OnImportCsvClicked()
+{
+	IDesktopPlatform* const DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform)
+	{
+		return FReply::Handled();
+	}
+
+	UWorld* const World = GetCurrentWorld();
+	if (!World)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoWorldImport", "No world available for import."));
+		return FReply::Handled();
+	}
+
+	const void* ParentWindowHandle = nullptr;
+	if (const TSharedPtr<SWindow> Win = FSlateApplication::Get().FindBestParentWindowForDialogs(nullptr))
+	{
+		if (const TSharedPtr<FGenericWindow> NativeWindow = Win->GetNativeWindow())
+		{
+			ParentWindowHandle = NativeWindow->GetOSWindowHandle();
+		}
+	}
+
+	TArray<FString> OutFiles;
+	const FString DefaultPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir());
+	const bool bPicked = DesktopPlatform->OpenFileDialog(
+		ParentWindowHandle,
+		LOCTEXT("ImportCsvTitle", "Import Audio Loom routing CSV").ToString(),
+		DefaultPath,
+		TEXT(""),
+		TEXT("CSV files (*.csv)|*.csv"),
+		0,
+		OutFiles);
+
+	if (!bPicked || OutFiles.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	FString CsvText;
+	if (!FFileHelper::LoadFileToString(CsvText, *OutFiles[0]))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("ImportCsvReadFailed", "Could not read the CSV file."));
+		return FReply::Handled();
+	}
+
+	int32 AppliedCount = 0;
+	FString Errors;
+	const bool bAnyApplied = FAudioLoomRoutingCsv::ApplyRoutingCsv(World, CsvText, AppliedCount, Errors);
+
+	RebuildComponentList();
+
+	FString Summary = FString::Printf(TEXT("Applied %d row(s)."), AppliedCount);
+	if (!Errors.IsEmpty())
+	{
+		Summary += LINE_TERMINATOR LINE_TERMINATOR;
+		Summary += Errors;
+	}
+	if (!bAnyApplied && AppliedCount == 0)
+	{
+		Summary = Errors.IsEmpty()
+			? FString(TEXT("No rows were applied."))
+			: Errors;
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Summary));
 	return FReply::Handled();
 }
 

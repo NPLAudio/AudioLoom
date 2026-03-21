@@ -48,6 +48,8 @@ private:
 	/** Rebind list to PlayWorld / editor world when PIE starts or stops. */
 	void OnPIEWorldChanged(bool bArg);
 	FReply OnRefreshClicked();
+	FReply OnExportCsvClicked();
+	FReply OnImportCsvClicked();
 
 	TArray<TWeakObjectPtr<UAudioLoomComponent>> ComponentList;
 	/** `SListView` source: shared pointers so Slate keeps stable row identity. */
